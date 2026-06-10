@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shop — 今井園 IMAIEN</title>
+  <meta name="description" content="7つのMood Teaから、あなたの心に合わせた一杯を。今井園のオンラインショップへ。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Noto+Sans+JP:wght@300;400;500&family=Noto+Serif+JP:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    /* Mood card accent colors */
+    .ac-1 { background: #3D6B5A; }
+    .ac-2 { background: #3C4E82; }
+    .ac-3 { background: #96723F; }
+    .ac-4 { background: #8B4A40; }
+    .ac-5 { background: #7A7C3A; }
+    .ac-6 { background: #703860; }
+    .ac-7 { background: #3E7E8C; }
+  </style>
+</head>
+<body>
+
+<!-- ======= NAVIGATION ======= -->
+<nav class="nav" id="nav" style="--nav-start: var(--black);">
+  <a href="index.html" class="nav__logo" style="color:var(--black);">今井園<span>IMAIEN</span></a>
+  <div class="nav__links" style="">
+    <a href="about.html" style="color:var(--black);">About</a>
+    <a href="shop.html" style="color:var(--black);">Shop</a>
+    <a href="wholesale.html" style="color:var(--black);">Wholesale</a>
+    <a href="events.html" style="color:var(--black);">Events</a>
+    <a href="contact.html" style="color:var(--black);">Contact</a>
+  </div>
+  <a href="https://imaien.square.site/" target="_blank" class="nav__shop-btn" style="border-color:var(--black);color:var(--black);">Online Store</a>
+  <button class="nav__hamburger" id="menuBtn" aria-label="メニューを開く">
+    <span style="background:var(--black);"></span>
+    <span style="background:var(--black);"></span>
+    <span style="background:var(--black);"></span>
+  </button>
+</nav>
+<div class="nav__overlay" id="navOverlay">
+  <a href="about.html">About</a>
+  <a href="shop.html">Shop</a>
+  <a href="wholesale.html">Wholesale</a>
+  <a href="events.html">Events</a>
+  <a href="contact.html">Contact</a>
+</div>
+
+<!-- ======= SHOP INTRO ======= -->
+<section class="shop-intro">
+  <p class="section-label" style="justify-content:center; margin-bottom:1.5rem;">Retail — Mood Tea</p>
+  <h1 class="shop-intro__title">
+    心に合わせて、<br>茶を選ぶ。
+  </h1>
+  <p class="shop-intro__sub">
+    日常の豊かなひとときに寄り添う、7つのMood Tea。<br>
+    「孤独を愉しむ。」「言葉を交わす。」「自然に還る。」<br>
+    あなたが大切にしたいその瞬間に、そっと一服を。<br><br>
+    日本茶はもっと、あなたの日常を豊かにできる。
+  </p>
+</section>
+
+<!-- ======= MOOD GRID ======= -->
+<div class="mood-grid">
+
+  <!-- 01 Me time, Refine -->
+  <article class="mood-card reveal">
+    <div class="mood-card__accent ac-1"></div>
+    <p class="mood-card__num">01</p>
+    <h2 class="mood-card__name">Me time, Refine</h2>
+    <p class="mood-card__tagline">雑念を手放し、集中したいときに。自分を整えるひととき。</p>
+    <p class="mood-card__desc">
+      散らばった思考を一つひとつ拾い集め、整えていく。<br>
+      冷えた空気に、立ちのぼる湯気と、冴え渡る意識。<br>
+      自分と向き合う時間は、何よりの贅沢だと知る一杯です。
+    </p>
+  </article>
+
+  <!-- 02 Me time, Float -->
+  <article class="mood-card reveal d1">
+    <div class="mood-card__accent ac-2"></div>
+    <p class="mood-card__num">02</p>
+    <h2 class="mood-card__name">Me time, Float</h2>
+    <p class="mood-card__tagline">眠れぬ夜、物思いに耽る時間に。静かな孤独と共に、心を漂わせて。</p>
+    <p class="mood-card__desc">
+      眠れぬ夜、静かな孤独さえも愛おしく感じられるように。<br>
+      答えのない物思いに、ただゆらゆらと心を委ねる。<br>
+      重力から解き放たれるようなひとときが、心を優しく解かしていきます。
+    </p>
+  </article>
+
+  <!-- 03 Drift into Memories -->
+  <article class="mood-card reveal d2">
+    <div class="mood-card__accent ac-3"></div>
+    <p class="mood-card__num">03</p>
+    <h2 class="mood-card__name">Drift into Memories</h2>
+    <p class="mood-card__tagline">懐かしさに浸りたいときに。香りが記憶をそっと呼び起こす。</p>
+    <p class="mood-card__desc">
+      お茶の香りが、あの日見た夕焼けや、誰かの笑顔を連れてくる。<br>
+      懐かしさに身を浸し、今の自分を愛おしむ。<br>
+      過去と未来が優しく交差する、あなただけの物語の時間です。
+    </p>
+  </article>
+
+  <!-- 04 Tea n' Talk -->
+  <article class="mood-card reveal">
+    <div class="mood-card__accent ac-4"></div>
+    <p class="mood-card__num">04</p>
+    <h2 class="mood-card__name">Tea n' Talk</h2>
+    <p class="mood-card__tagline">仲間とゆるく過ごす時間に。意味はなくても、心は満たされる。</p>
+    <p class="mood-card__desc">
+      仲間と笑い、ただゆるやかに流れていくひととき。<br>
+      特別な意味はなくても、そこにあるのは満たされた心。<br>
+      取り留めのない会話の隙間に、温かなお茶がそっと寄り添います。
+    </p>
+  </article>
+
+  <!-- 05 Open Invitation -->
+  <article class="mood-card reveal d1">
+    <div class="mood-card__accent ac-5"></div>
+    <p class="mood-card__num">05</p>
+    <h2 class="mood-card__name">Open Invitation</h2>
+    <p class="mood-card__tagline">誰にでも「ようこそ」と伝えたいときに。垣根のない暖かい気持ちを込めて。</p>
+    <p class="mood-card__desc">
+      「ようこそ」の言葉とともに、香りが部屋を満たしていく。<br>
+      ホストもゲストも、いつの間にか同じ景色を眺めている。<br>
+      一期一会の出逢いを彩る、軽やかで華やかなおもてなしの一杯。
+    </p>
+  </article>
+
+  <!-- 06 Uni-Tea -->
+  <article class="mood-card reveal d2">
+    <div class="mood-card__accent ac-6"></div>
+    <p class="mood-card__num">06</p>
+    <h2 class="mood-card__name">Uni-Tea</h2>
+    <p class="mood-card__tagline">深いつながりを感じたいときに。共にいるだけで満たされるような一服。</p>
+    <p class="mood-card__desc">
+      言葉を尽くすよりも、静かに同じお茶を味わうこと。<br>
+      二人の間に流れる空気を、お茶がそっと形にしてくれる。<br>
+      ただ隣にいることの幸せを、深く、静かに噛みしめるために。
+    </p>
+  </article>
+
+  <!-- 07 Breeze is Nice -->
+  <article class="mood-card reveal" style="grid-column: 1 / -1; border-right:none;">
+    <div class="mood-card__accent ac-7"></div>
+    <p class="mood-card__num">07</p>
+    <h2 class="mood-card__name">Breeze is Nice</h2>
+    <p class="mood-card__tagline">自然に身を委ねたいときに。風や光とひとつになるような感覚を。</p>
+    <p class="mood-card__desc" style="max-width:640px;">
+      天井のない空の下、地球の呼吸を肌で感じる。<br>
+      吹き抜ける風が、身体の中の濁りをすべて流してくれるよう。<br>
+      自然の懐に抱かれ、心を開放する至福の解放感。
+    </p>
+  </article>
+
+</div>
+
+<!-- ======= SHOP CTA ======= -->
+<section class="shop-cta">
+  <p class="section-label section-label--light reveal" style="justify-content:center;">Online Store</p>
+  <h2 class="reveal d1">あなたの一杯を、<br>今日から。</h2>
+  <p class="reveal d2">
+    今井園のオンラインショップにて、Mood Tea をご購入いただけます。<br>
+    あなたの心に合わせた一杯を見つけてください。
+  </p>
+  <a href="https://imaien.square.site/" target="_blank" class="btn btn--primary reveal d3">
+    オンラインショップへ
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+  </a>
+</section>
+
+<!-- ======= FOOTER ======= -->
+<footer class="footer">
+  <div class="footer__inner">
+    <div class="footer__top">
+      <div class="footer__brand">
+        <h3>今井園</h3>
+        <p>人生のあらゆる場面に日本茶を届け、一つでも多くの人生を豊かにする。</p>
+      </div>
+      <div class="footer__col">
+        <h4>Pages</h4>
+        <ul>
+          <li><a href="about.html">About</a></li>
+          <li><a href="shop.html">Shop</a></li>
+          <li><a href="wholesale.html">Wholesale</a></li>
+          <li><a href="events.html">Events</a></li>
+          <li><a href="contact.html">Contact</a></li>
+        </ul>
+      </div>
+      <div class="footer__col">
+        <h4>Shop</h4>
+        <ul>
+          <li><a href="https://imaien.square.site/" target="_blank">Online Store</a></li>
+          <li><a href="wholesale.html">Wholesale</a></li>
+          <li><a href="events.html">Events</a></li>
+        </ul>
+      </div>
+      <div class="footer__col">
+        <h4>Social</h4>
+        <ul>
+          <li><a href="#">Instagram</a></li>
+          <li><a href="#">Twitter / X</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer__bottom">
+      <p>© 2024 今井園 IMAIEN. All rights reserved.</p>
+      <p>Crafted with care for Japanese tea culture.</p>
+    </div>
+  </div>
+</footer>
+
+<script src="js/main.js"></script>
+<script>
+  /* Shop page: nav starts dark (cream hero) */
+  document.getElementById('nav').classList.add('scrolled');
+</script>
+</body>
+</html>

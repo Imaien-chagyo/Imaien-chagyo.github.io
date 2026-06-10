@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Services — 今井園 IMAIEN</title>
+  <meta name="description" content="今井園のサービス。小売（Mood Tea）・卸売・イベント。心に合わせた一杯から、プロ向けB2B、体験型イベントまで。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Noto+Sans+JP:wght@300;400;500&family=Noto+Serif+JP:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .ac-1{background:#3D6B5A}.ac-2{background:#3C4E82}.ac-3{background:#96723F}
+    .ac-4{background:#8B4A40}.ac-5{background:#7A7C3A}.ac-6{background:#703860}.ac-7{background:#3E7E8C}
+  </style>
+</head>
+<body>
+
+<!-- ======= NAV ======= -->
+<nav class="nav" id="nav">
+  <a href="index.html" class="nav__logo">今井園<span>IMAIEN</span></a>
+  <div class="nav__links">
+    <a href="index.html">Home</a>
+    <a href="about.html">About</a>
+    <a href="services.html">Services</a>
+    <a href="contact.html">Contact</a>
+  </div>
+  <a href="https://imaien.square.site/" target="_blank" class="nav__shop-btn">Online Store</a>
+  <button class="nav__hamburger" id="menuBtn" aria-label="メニューを開く">
+    <span></span><span></span><span></span>
+  </button>
+</nav>
+<div class="nav__overlay" id="navOverlay">
+  <a href="index.html">Home</a>
+  <a href="about.html">About</a>
+  <a href="services.html">Services</a>
+  <a href="contact.html">Contact</a>
+</div>
+
+<!-- ======= PAGE HERO ======= -->
+<header class="page-hero">
+  <div class="page-hero__inner">
+    <p class="page-hero__eyebrow">Services</p>
+    <h1 class="page-hero__title">小売・卸売・イベント</h1>
+    <p class="page-hero__desc">
+      Mood Tea の小売から、飲食店・空間へのB2B卸売、<br>
+      体験型イベントの企画まで。<br>
+      今井園の3つのサービスをご紹介します。
+    </p>
+  </div>
+</header>
+
+<!-- ======= SUB NAV ======= -->
+<nav class="services-subnav" aria-label="サービス内ナビゲーション">
+  <a href="#retail">小売 / Retail</a>
+  <a href="#wholesale">卸売 / Wholesale</a>
+  <a href="#events">イベント / Events</a>
+</nav>
+
+<!-- ========================================================
+     SECTION 1: 小売 / RETAIL
+     ======================================================== -->
+<section id="retail" class="services-section">
+
+  <!-- 章ヘッダー -->
+  <div class="svc-chapter svc-chapter--green">
+    <span class="svc-chapter__num">01</span>
+    <div class="svc-chapter__meta">
+      <p class="svc-chapter__label">Retail — Mood Tea</p>
+      <h2 class="svc-chapter__title">小売</h2>
+    </div>
+  </div>
+
+  <!-- イントロ -->
+  <div class="shop-intro">
+    <p class="section-label" style="justify-content:center;margin-bottom:1.5rem;">Retail — Mood Tea</p>
+    <h2 class="shop-intro__title">心に合わせて、<br>茶を選ぶ。</h2>
+    <p class="shop-intro__sub">
+      日常の豊かなひとときに寄り添う、7つのMood Tea。<br>
+      「孤独を愉しむ。」「言葉を交わす。」「自然に還る。」<br>
+      あなたが大切にしたいその瞬間に、そっと一服を。<br><br>
+      日本茶はもっと、あなたの日常を豊かにできる。
+    </p>
+  </div>
+
+  <!-- Mood Tea カード（横スクロール） -->
+  <div class="mood-tea" style="padding-bottom:0;">
+    <div class="mood-tea__scroll" id="teaScroll">
+      <div class="tea-card tc-1 reveal d1">
+        <div class="tea-card__bg"></div><div class="tea-card__shadow"></div>
+        <div class="tea-card__body">
+          <p class="tea-card__num">01</p>
+          <h3 class="tea-card__name">Me time,<br>Refine</h3>
+          <p class="tea-card__tagline">雑念を手放し、集中したいときに。自分を整えるひととき。</p>
+        </div>
+      </div>
+      <div class="tea-card tc-2 reveal d2">
+        <div class="tea-card__bg"></div><div class="tea-card__shadow"></div>
+        <div class="tea-card__body">
+          <p class="tea-card__num">02</p>
+          <h3 class="tea-card__name">Me time,<br>Float</h3>
+          <p class="tea-card__tagline">眠れぬ夜、物思いに耽る時間に。静かな孤独と共に。</p>
+        </div>
+      </div>
+      <div class="tea-card tc-3 reveal d3">
+        <div class="tea-card__bg"></div><div class="tea-card__shadow"></div>
+        <div class="tea-card__body">
+          <p class="tea-card__num">03</p>
+          <h3 class="tea-card__name">Drift into<br>Memories</h3>
+          <p class="tea-card__tagline">懐かしさに浸りたいときに。香りが記憶をそっと呼び起こす。</p>
+        </div>
+      </div>
+      <div class="tea-card tc-4 reveal d4">
+        <div class="tea-card__bg"></div><div class="tea-card__shadow"></div>
+        <div class="tea-card__body">
+          <p class="tea-card__num">04</p>
+          <h3 class="tea-card__name">Tea n' Talk</h3>
+          <p class="tea-card__tagline">仲間とゆるく過ごす時間に。意味はなくても、心は満たされる。</p>
+        </div>
+      </div>
+      <div class="tea-card tc-5 reveal d5">
+        <div class="tea-card__bg"></div><div class="tea-card__shadow"></div>
+        <div class="tea-card__body">
+          <p class="tea-card__num">05</p>
+          <h3 class="tea-card__name">Open<br>Invitation</h3>
+          <p class="tea-card__tagline">誰にでも「ようこそ」と伝えたいときに。垣根のない温かさを。</p>
+        </div>
+      </div>
+      <div class="tea-card tc-6 reveal d6">
+        <div class="tea-card__bg"></div><div class="tea-card__shadow"></div>
+        <div class="tea-card__body">
+          <p class="tea-card__num">06</p>
+          <h3 class="tea-card__name">Uni-Tea</h3>
+          <p class="tea-card__tagline">深いつながりを感じたいときに。共にいるだけで満たされる。</p>
+        </div>
+      </div>
+      <div class="tea-card tc-7 reveal d7">
+        <div class="tea-card__bg"></div><div class="tea-card__shadow"></div>
+        <div class="tea-card__body">
+          <p class="tea-card__num">07</p>
+          <h3 class="tea-card__name">Breeze<br>is Nice</h3>
+          <p class="tea-card__tagline">自然に身を委ねたいときに。風や光とひとつになるような感覚を。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Square CTA -->
+  <section class="shop-cta">
+    <p class="section-label section-label--light reveal" style="justify-content:center;">Online Store</p>
+    <h2 class="reveal d1">あなたの一杯を、今日から。</h2>
+    <p class="reveal d2">今井園のオンラインショップにて、Mood Tea をご購入いただけます。<br>あなたの心に合わせた一杯を見つけてください。</p>
+    <a href="https://imaien.square.site/" target="_blank" class="btn btn--primary reveal d3">
+      オンラインショップで購入する
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+    </a>
+  </section>
+
+</section>
+
+<!-- ========================================================
+     SECTION 2: 卸売 / WHOLESALE
+     ======================================================== -->
+<section id="wholesale" class="services-section">
+
+  <!-- 章ヘッダー -->
+  <div class="svc-chapter svc-chapter--navy">
+    <span class="svc-chapter__num">02</span>
+    <div class="svc-chapter__meta">
+      <p class="svc-chapter__label">Wholesale &amp; B2B</p>
+      <h2 class="svc-chapter__title">卸売</h2>
+    </div>
+  </div>
+
+  <!-- 詳細 -->
+  <div class="shop-intro">
+    <p class="section-label reveal" style="justify-content:center;margin-bottom:1.5rem;">Wholesale &amp; B2B</p>
+    <h2 class="shop-intro__title reveal d1">茶のプロとして、<br>あなたの理想を形にする。</h2>
+    <p class="shop-intro__sub reveal d2">
+      長く茶の世界に身を置いてきたからこそ、私たち今井園にはわかることがあります。<br>
+      それは、お茶にはまだまだ、未知の可能性があるということ。<br>
+      一杯のお茶割りから、至高の一皿に添えるパウダーまで。<br>
+      今井園は、あなたのクリエイティビティに並走する、一番身近な茶のお供です。
+    </p>
+  </div>
+
+  <!-- サービス3種 -->
+  <div class="svc-grid">
+    <article class="svc-card reveal">
+      <div class="svc-icon">
+        <svg viewBox="0 0 24 24"><path d="M8 2v4M12 2v4M16 2v4M4 8h16l-1.5 12H5.5L4 8z"/><path d="M9 12h6"/></svg>
+      </div>
+      <p class="svc-for">For Cafes, Bars &amp; Izakaya</p>
+      <h3 class="svc-title">カフェ・バー・居酒屋向け</h3>
+      <p class="svc-tagline">"記憶に残る、究極の一杯を。"</p>
+      <p class="svc-desc">居酒屋のスタンダードを格上げする茶割りから、バーの夜を彩るお茶のカクテルまで。アルコールと茶の、最も美しい比率をご提案します。</p>
+    </article>
+    <article class="svc-card reveal d1">
+      <div class="svc-icon">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+      </div>
+      <p class="svc-for">For Kitchen &amp; Pastry</p>
+      <h3 class="svc-title">料理・製菓向け</h3>
+      <p class="svc-tagline">"素材としての、茶を極める。"</p>
+      <p class="svc-desc">抹茶やほうじ茶パウダーなど、製菓・料理用の素材提供。香りの立ち方、色の鮮やかさ。プロの現場が求めるクオリティに、確かな品質でお応えします。</p>
+    </article>
+    <article class="svc-card reveal d2">
+      <div class="svc-icon">
+        <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      </div>
+      <p class="svc-for">For Concept Stores</p>
+      <h3 class="svc-title">コンセプトストア向け</h3>
+      <p class="svc-tagline">"ブランドの空気を、香りに変える。"</p>
+      <p class="svc-desc">アパレルショップやオフィスなど、空間に合わせたお茶のセレクトやオリジナルブレンドの構築。あなたのブランドに、ふさわしい「一服」を。</p>
+    </article>
+  </div>
+
+  <!-- 今井園の強み (navy) -->
+  <section class="strengths strengths--navy">
+    <div class="container">
+      <p class="section-label section-label--light reveal">今井園の強み</p>
+      <h2 class="section-title reveal d1" style="color:var(--cream);">なぜ私たちが<br>選ばれるのか。</h2>
+      <div class="strengths__grid">
+        <div class="reveal d1">
+          <p class="str-item__num">01</p>
+          <p class="str-item__label">Deep Insight</p>
+          <h3 class="str-item__title">知見</h3>
+          <p class="str-item__desc">茶業界に長くい続けたからこそわかる、産地・品質・トレンドのすべて。表面的な知識ではなく、現場で積み重ねた深い洞察をご提供します。</p>
+        </div>
+        <div class="reveal d2">
+          <p class="str-item__num">02</p>
+          <p class="str-item__label">Strong Network</p>
+          <h3 class="str-item__title">繋がり</h3>
+          <p class="str-item__desc">関連産業への広範なコネクションを活かし、茶葉だけでなく、提供スタイルや器のご相談まで一貫してサポート。</p>
+        </div>
+        <div class="reveal d3">
+          <p class="str-item__num">03</p>
+          <p class="str-item__label">Flexible Support</p>
+          <h3 class="str-item__title">柔軟性</h3>
+          <p class="str-item__desc">小規模なテスト導入から、大規模な供給まで。形式にとらわれない、ベストな提案を約束します。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</section>
+
+<!-- ========================================================
+     SECTION 3: イベント / EVENTS
+     ======================================================== -->
+<section id="events" class="services-section">
+
+  <!-- 章ヘッダー -->
+  <div class="svc-chapter svc-chapter--dark">
+    <span class="svc-chapter__num">03</span>
+    <div class="svc-chapter__meta">
+      <p class="svc-chapter__label">Events &amp; Experiences</p>
+      <h2 class="svc-chapter__title">イベント</h2>
+    </div>
+  </div>
+
+  <!-- ヒーロー帯 -->
+  <div class="svc-band--events">
+    <div style="position:relative;z-index:1;max-width:var(--max-width);margin:0 auto;text-align:center;">
+      <p class="section-label section-label--light reveal" style="justify-content:center;">Events &amp; Experiences</p>
+      <h2 class="reveal d1" style="font-family:var(--font-serif);font-size:var(--size-h2);font-weight:300;line-height:1.1;color:var(--white);">
+        TEA<br>
+        <span style="font-style:italic;opacity:.55;font-size:.6em;">×</span><br>
+        Experience
+      </h2>
+      <p class="reveal d2" style="margin-top:2rem;font-size:0.95rem;line-height:2;opacity:.85;max-width:520px;margin-left:auto;margin-right:auto;">
+        お茶を、もっと身近に、もっと楽しく。<br>
+        私たちは信じています。お茶には、まだ誰にも見つけられていない「楽しみ方」が無数にあることを。<br><br>
+        それは喉を潤すためだけのものではなく、あなたの心が動く瞬間に、<br>
+        最も近くで寄り添う「最高のお供」であるはずです。
+      </p>
+    </div>
+  </div>
+
+  <!-- 体験4種 -->
+  <div class="exp-grid">
+    <article class="exp-card reveal">
+      <div class="exp-card__bg-word">Music</div>
+      <div class="exp-card__icon">🎵</div>
+      <p class="exp-card__cat">TEA × Music</p>
+      <h3 class="exp-card__title">Music &amp; Tea</h3>
+      <p class="exp-card__tagline">"音と香りが、溶け合う瞬間に。"</p>
+      <p class="exp-card__desc">心地よい音楽に包まれながら、深い一服を。音と香りが溶け合う、新しいお茶の時間。</p>
+    </article>
+    <article class="exp-card reveal d1">
+      <div class="exp-card__bg-word">Meditation</div>
+      <div class="exp-card__icon">🧘</div>
+      <p class="exp-card__cat">TEA × Meditation / Yoga</p>
+      <h3 class="exp-card__title">Meditation<br>&amp; Tea</h3>
+      <p class="exp-card__tagline">"静寂を、深く吸い込む。"</p>
+      <p class="exp-card__desc">呼吸を整え、お茶の温度を全身で感じる。自分自身へと還るための、マインドフルなひととき。</p>
+    </article>
+    <article class="exp-card reveal">
+      <div class="exp-card__bg-word">Night</div>
+      <div class="exp-card__icon">🥃</div>
+      <p class="exp-card__cat">TEA × Alcohol</p>
+      <h3 class="exp-card__title">Alcohol &amp; Tea</h3>
+      <p class="exp-card__tagline">"夜を彩る、一滴の魔法。"</p>
+      <p class="exp-card__desc">バーやナイトシーンで。お酒とお茶が織りなす、奥行きのある大人の嗜み。</p>
+    </article>
+    <article class="exp-card reveal d1">
+      <div class="exp-card__bg-word">Reading</div>
+      <div class="exp-card__icon">📖</div>
+      <p class="exp-card__cat">TEA × Reading</p>
+      <h3 class="exp-card__title">Reading &amp; Tea</h3>
+      <p class="exp-card__tagline">"物語に、寄り添う温度。"</p>
+      <p class="exp-card__desc">ページをめくる指先に、心地よい余韻を。物語の世界をより深く旅するための、静かな伴走者。</p>
+    </article>
+  </div>
+
+  <!-- コラボ募集 (charcoal) -->
+  <section class="collab collab--charcoal">
+    <div class="container">
+      <p class="section-label section-label--light reveal" style="justify-content:center;">Collaboration</p>
+      <h2 class="collab__title reveal d1">新しい楽しみ方を、<br>共に企みませんか？</h2>
+      <p class="collab__body reveal d2">
+        今井園は、クリエイター、インストラクター、アーティストなど、
+        異なる領域のプロフェッショナルとの出逢いを探しています。<br><br>
+        「こんな場所に、お茶があったら面白いかも」<br>
+        その小さなひらめきを、一緒に形にしませんか？<br>
+        ジャンルは問いません。あなたの企みに、最高のお茶を添えさせてください。
+      </p>
+      <a href="contact.html" class="btn btn--primary reveal d3">
+        企みを相談してみる
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      </a>
+    </div>
+  </section>
+
+</section>
+
+<!-- ======= FOOTER ======= -->
+<footer class="footer">
+  <div class="footer__inner">
+    <div class="footer__top">
+      <div class="footer__brand">
+        <h3>今井園</h3>
+        <p>人生のあらゆる場面に日本茶を届け、一つでも多くの人生を豊かにする。</p>
+      </div>
+      <div class="footer__col">
+        <h4>Pages</h4>
+        <ul>
+          <li><a href="index.html">Home</a></li>
+          <li><a href="about.html">About</a></li>
+          <li><a href="services.html">Services</a></li>
+          <li><a href="contact.html">Contact</a></li>
+        </ul>
+      </div>
+      <div class="footer__col">
+        <h4>Services</h4>
+        <ul>
+          <li><a href="services.html#retail">小売 / Retail</a></li>
+          <li><a href="services.html#wholesale">卸売 / Wholesale</a></li>
+          <li><a href="services.html#events">イベント / Events</a></li>
+        </ul>
+      </div>
+      <div class="footer__col">
+        <h4>Shop &amp; Social</h4>
+        <ul>
+          <li><a href="https://imaien.square.site/" target="_blank">Online Store</a></li>
+          <li><a href="#">Instagram</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer__bottom">
+      <p>© 2024 今井園 IMAIEN. All rights reserved.</p>
+      <p>Crafted with care for Japanese tea culture.</p>
+    </div>
+  </div>
+</footer>
+
+<script src="js/main.js"></script>
+</body>
+</html>
