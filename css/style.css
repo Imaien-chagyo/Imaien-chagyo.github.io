@@ -212,7 +212,7 @@ h1, h2, h3, h4 {
   letter-spacing: 0.02em;
   margin-bottom: 2rem;
 }
-.hero__title em { font-style: italic; opacity: 0.85; }
+.hero__title em { font-style: italic; opacity: 0.85; white-space: nowrap; }
 .hero__subtitle {
   font-size: clamp(0.88rem, 1.4vw, 1.05rem);
   line-height: 2;
