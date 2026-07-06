@@ -671,7 +671,7 @@ h1, h2, h3, h4 {
   content: '';
   position: absolute;
   left: 100px;
-  top: 7px;
+  top: 11px;
   width: 7px; height: 7px;
   border-radius: 50%;
   background: var(--green-mid);
@@ -680,15 +680,17 @@ h1, h2, h3, h4 {
 }
 .tl-year {
   font-family: var(--font-serif);
-  font-size: 1.1rem;
+  font-size: 1.3rem;
+  line-height: 1.3;
   color: var(--green-mid);
   text-align: right;
-  font-weight: 300;
-  padding-top: 2px;
+  font-weight: 400;
+  font-variant-numeric: lining-nums;
 }
 .tl-content h3 {
   font-family: var(--font-serif);
   font-size: 1.3rem;
+  line-height: 1.3;
   font-weight: 400;
   margin-bottom: 0.6rem;
 }
