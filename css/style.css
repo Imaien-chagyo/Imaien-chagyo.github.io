@@ -375,7 +375,9 @@ h1, h2, h3, h4 {
    MOOD TEA HORIZONTAL SCROLL
    ============================================ */
 .mood-tea { overflow: hidden; }
-.mood-tea__header { padding: 0 var(--container-pad); max-width: var(--max-width); margin: 0 auto; }
+.mood-tea__header { padding: 0 var(--container-pad); max-width: var(--max-width); margin: 0 auto; text-align: center; }
+.mood-tea__header .section-label { justify-content: center; }
+.mood-tea__header .section-body { margin-left: auto; margin-right: auto; }
 .mood-tea__scroll {
   display: flex;
   gap: 1.5rem;
