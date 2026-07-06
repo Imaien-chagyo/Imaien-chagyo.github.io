@@ -650,7 +650,7 @@ h1, h2, h3, h4 {
 /* ============================================
    ABOUT — TIMELINE
    ============================================ */
-.timeline-section { padding: var(--section-gap) var(--container-pad); background: var(--cream); }
+.timeline-section { padding: var(--section-gap) var(--container-pad); background: var(--cream-dark); }
 .timeline { max-width: 760px; margin: 4rem auto 0; position: relative; }
 .timeline::before {
   content: '';
@@ -658,7 +658,7 @@ h1, h2, h3, h4 {
   left: 100px;
   top: 0; bottom: 0;
   width: 1px;
-  background: var(--cream-dark);
+  background: #cfc8bb;
 }
 .tl-item {
   display: grid;
