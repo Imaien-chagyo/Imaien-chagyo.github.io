@@ -769,7 +769,7 @@ h1, h2, h3, h4 {
 }
 
 /* Dark-themed shop-intro variants (unify section backgrounds) */
-.shop-intro--green { background: var(--green-dark); }
+.shop-intro--green { background: var(--green-mid); }
 .shop-intro--navy  { background: var(--navy); }
 .shop-intro--green .shop-intro__title,
 .shop-intro--navy  .shop-intro__title { color: var(--cream); }
@@ -839,7 +839,7 @@ h1, h2, h3, h4 {
 }
 
 .shop-cta {
-  background: var(--green-dark);
+  background: var(--green-mid);
   padding: 120px var(--container-pad);
   text-align: center;
   color: var(--white);
@@ -1242,9 +1242,9 @@ h1, h2, h3, h4 {
   border-top: 4px solid;
   background: var(--cream-dark);
 }
-.svc-chapter--green  { border-color: var(--green-dark); }
-.svc-chapter--navy   { border-color: var(--navy); }
-.svc-chapter--dark   { border-color: var(--charcoal); }
+.svc-chapter--green  { border-color: var(--green-dark); background: var(--green-mid); }
+.svc-chapter--navy   { border-color: var(--navy-mid); background: var(--navy); }
+.svc-chapter--dark   { border-color: #3a2c28; background: var(--charcoal); }
 
 .svc-chapter__num {
   font-family: var(--font-serif);
@@ -1254,9 +1254,9 @@ h1, h2, h3, h4 {
   opacity: 0.12;
   flex-shrink: 0;
 }
-.svc-chapter--green .svc-chapter__num  { color: var(--green-dark); }
-.svc-chapter--navy  .svc-chapter__num  { color: var(--navy); }
-.svc-chapter--dark  .svc-chapter__num  { color: var(--charcoal); }
+.svc-chapter--green .svc-chapter__num,
+.svc-chapter--navy  .svc-chapter__num,
+.svc-chapter--dark  .svc-chapter__num  { color: var(--white); opacity: 0.22; }
 
 .svc-chapter__meta { }
 .svc-chapter__label {
@@ -1266,15 +1266,15 @@ h1, h2, h3, h4 {
   text-transform: uppercase;
   margin-bottom: 0.5rem;
 }
-.svc-chapter--green .svc-chapter__label { color: var(--green-mid); }
-.svc-chapter--navy  .svc-chapter__label { color: var(--navy-mid); }
-.svc-chapter--dark  .svc-chapter__label { color: #5a4a48; }
+.svc-chapter--green .svc-chapter__label { color: var(--green-light); }
+.svc-chapter--navy  .svc-chapter__label { color: #8fa2c9; }
+.svc-chapter--dark  .svc-chapter__label { color: #a08a86; }
 
 .svc-chapter__title {
   font-family: var(--font-serif);
   font-size: var(--size-h3);
   font-weight: 300;
-  color: var(--black);
+  color: var(--white);
   line-height: 1.1;
 }
 
