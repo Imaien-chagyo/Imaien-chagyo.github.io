@@ -104,6 +104,11 @@ h1, h2, h3, h4 {
 }
 .nav__links a:hover { opacity: 0.55; }
 .nav.scrolled .nav__links a { color: var(--black); }
+.nav__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
 .nav__shop-btn {
   font-family: var(--font-sans);
   font-size: 0.72rem;
@@ -160,6 +165,20 @@ h1, h2, h3, h4 {
   transition: opacity 0.2s;
 }
 .nav__overlay a:hover { opacity: 0.45; }
+.nav__overlay-lang {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  font-family: var(--font-sans);
+}
+.nav__overlay-lang a {
+  font-size: 0.9rem;
+  letter-spacing: 0.14em;
+  color: rgba(255,255,255,0.55);
+}
+.nav__overlay-lang a.active { color: var(--white); font-weight: 500; }
+.nav__overlay-lang span { color: rgba(255,255,255,0.3); }
 
 /* ============================================
    HERO
@@ -1320,7 +1339,7 @@ h1, h2, h3, h4 {
 
 @media (max-width: 768px) {
   .nav__links { display: none; }
-  .nav__shop-btn { display: none; }
+  .nav__actions { display: none; }
   .nav__hamburger { display: flex; }
 
   .tea-card { flex: 0 0 270px; height: 420px; }

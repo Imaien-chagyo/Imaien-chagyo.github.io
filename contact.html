@@ -6,6 +6,9 @@
   <title>Contact — 今井園 IMAIEN</title>
   <meta name="description" content="今井園へのお問い合わせ。小売・卸売・イベントコラボレーション、その他ご相談はこちらから。東京都目黒区鷹番2-20-8。">
   <link rel="canonical" href="https://imaien.com/contact.html">
+  <link rel="alternate" hreflang="ja" href="https://imaien.com/contact.html">
+  <link rel="alternate" hreflang="en" href="https://imaien.com/en/contact.html">
+  <link rel="alternate" hreflang="x-default" href="https://imaien.com/contact.html">
   <meta name="theme-color" content="#1E3D2F">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="今井園 IMAIEN">
@@ -58,7 +61,14 @@
     <a href="services.html" style="color:var(--black);">Services</a>
     <a href="contact.html" style="color:var(--black);">Contact</a>
   </div>
-  <a href="https://imaien.square.site/" target="_blank" class="nav__shop-btn" style="border-color:var(--green-dark);color:var(--green-dark);">Online Store</a>
+  <div class="nav__actions">
+    <a href="https://imaien.square.site/" target="_blank" class="nav__shop-btn" style="border-color:var(--green-dark);color:var(--green-dark);">Online Store</a>
+    <div class="lang-switch">
+      <a href="contact.html" class="lang-switch__btn lang-switch__btn--active">JP</a>
+      <span class="lang-switch__sep">/</span>
+      <a href="en/contact.html" class="lang-switch__btn">EN</a>
+    </div>
+  </div>
   <button class="nav__hamburger" id="menuBtn" aria-label="メニューを開く">
     <span style="background:var(--black);"></span>
     <span style="background:var(--black);"></span>
@@ -70,6 +80,9 @@
   <a href="about.html">About</a>
   <a href="services.html">Services</a>
   <a href="contact.html">Contact</a>
+  <div class="nav__overlay-lang">
+    <a href="contact.html" class="active">JP</a><span>/</span><a href="en/contact.html">EN</a>
+  </div>
 </div>
 
 <!-- ======= CONTACT MAIN ======= -->
