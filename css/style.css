@@ -783,15 +783,6 @@ h1, h2, h3, h4 {
 .shop-intro--green .section-label::after,
 .shop-intro--navy  .section-label::after { background: var(--green-light); }
 
-/* Retail package image */
-.retail-package {
-  background: url(../images/home/package.jpg) center/contain no-repeat;
-  width: 100%;
-  max-width: 520px;
-  margin: 2.5rem auto 0;
-  aspect-ratio: 1/1;
-  border-radius: 4px;
-}
 
 .mood-grid {
   display: grid;
