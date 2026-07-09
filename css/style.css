@@ -412,7 +412,7 @@ h1, h2, h3, h4 {
 
 .tea-card {
   flex: 0 0 300px;
-  height: 460px;
+  height: 300px;
   position: relative;
   overflow: hidden;
   display: flex;
@@ -465,14 +465,14 @@ h1, h2, h3, h4 {
   overflow: hidden;
 }
 
-/* Card colors — gradient overlays on top of optional photo */
-.tc-1 .tea-card__bg { background: linear-gradient(150deg, rgba(61,107,90,0.82) 0%, rgba(42,74,62,0.88) 100%), url(../images/mood-tea/01.jpg); background-size: cover; background-position: center; }
-.tc-2 .tea-card__bg { background: linear-gradient(150deg, rgba(60,78,130,0.82) 0%, rgba(37,47,90,0.88) 100%), url(../images/mood-tea/02.jpg); background-size: cover; background-position: center; }
-.tc-3 .tea-card__bg { background: linear-gradient(150deg, rgba(150,114,63,0.82) 0%, rgba(107,79,40,0.88) 100%), url(../images/mood-tea/03.jpg); background-size: cover; background-position: center; }
-.tc-4 .tea-card__bg { background: linear-gradient(150deg, rgba(139,74,64,0.82) 0%, rgba(106,48,40,0.88) 100%), url(../images/mood-tea/04.jpg); background-size: cover; background-position: center; }
-.tc-5 .tea-card__bg { background: linear-gradient(150deg, rgba(122,124,58,0.82) 0%, rgba(86,88,36,0.88) 100%), url(../images/mood-tea/05.jpg); background-size: cover; background-position: center; }
-.tc-6 .tea-card__bg { background: linear-gradient(150deg, rgba(112,56,96,0.82) 0%, rgba(74,40,69,0.88) 100%), url(../images/mood-tea/06.jpg); background-size: cover; background-position: center; }
-.tc-7 .tea-card__bg { background: linear-gradient(150deg, rgba(62,126,140,0.82) 0%, rgba(40,89,107,0.88) 100%), url(../images/mood-tea/07.jpg); background-size: cover; background-position: center; }
+/* Card photos — full square image, no color overlay */
+.tc-1 .tea-card__bg { background: url(../images/mood-tea/01.jpg); background-size: cover; background-position: center; }
+.tc-2 .tea-card__bg { background: url(../images/mood-tea/02.jpg); background-size: cover; background-position: center; }
+.tc-3 .tea-card__bg { background: url(../images/mood-tea/03.jpg); background-size: cover; background-position: center; }
+.tc-4 .tea-card__bg { background: url(../images/mood-tea/04.jpg); background-size: cover; background-position: center; }
+.tc-5 .tea-card__bg { background: url(../images/mood-tea/05.jpg); background-size: cover; background-position: center; }
+.tc-6 .tea-card__bg { background: url(../images/mood-tea/06.jpg); background-size: cover; background-position: center; }
+.tc-7 .tea-card__bg { background: url(../images/mood-tea/07.jpg); background-size: cover; background-position: center; }
 
 /* Tea card accent bar */
 .tea-card::after {
@@ -1342,7 +1342,7 @@ h1, h2, h3, h4 {
   .nav__actions { display: none; }
   .nav__hamburger { display: flex; }
 
-  .tea-card { flex: 0 0 270px; height: 420px; }
+  .tea-card { flex: 0 0 270px; height: 270px; }
   .mood-tea__scroll { padding: 2rem 20px; }
 
   .mood-grid { grid-template-columns: 1fr; }
