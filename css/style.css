@@ -4,17 +4,17 @@
    CSS VARIABLES
    ============================================ */
 :root {
-  --green-dark:   #1E3D2F;
-  --green-mid:    #2C5540;
+  --green-dark:   #1F4A1F;   /* 深緑 */
+  --green-mid:    #2F5E2F;
   --green-light:  #8BAF9B;
   --navy:         #1A2640;   /* Wholesale セクション */
   --navy-mid:     #243452;
   --charcoal:     #1A1210;   /* Events セクション */
-  --cream:        #F5EFE3;
-  --cream-dark:   #EAE0D0;
+  --cream:        #F2ECDD;   /* 生成り */
+  --cream-dark:   #E6DDC9;
   --black:        #111111;
   --white:        #FFFFFF;
-  --gold:         #C4A055;
+  --gold:         #B8963E;   /* 金 */
   --text-muted:   #666666;
 
   --font-serif: 'Cormorant Garamond', 'Noto Serif JP', Georgia, serif;
@@ -74,7 +74,7 @@ h1, h2, h3, h4 {
   transition: background 0.4s ease, box-shadow 0.4s ease;
 }
 .nav.scrolled {
-  background: rgba(245,239,227,0.96);
+  background: rgba(242,236,221,0.96);
   backdrop-filter: blur(12px);
   box-shadow: 0 1px 0 rgba(0,0,0,0.07);
 }
@@ -198,7 +198,7 @@ h1, h2, h3, h4 {
   background:
     radial-gradient(ellipse at 25% 60%, rgba(61,107,90,0.09) 0%, transparent 55%),
     radial-gradient(ellipse at 80% 20%, rgba(196,160,85,0.02) 0%, transparent 50%),
-    linear-gradient(155deg, rgba(30,61,47,0.20) 0%, rgba(44,85,64,0.20) 45%, rgba(22,46,35,0.22) 100%),
+    linear-gradient(155deg, rgba(31,74,31,0.20) 0%, rgba(47,94,47,0.20) 45%, rgba(20,48,20,0.22) 100%),
     url(../images/home/hero.jpg);
   background-size: cover;
   background-position: center;
@@ -568,13 +568,13 @@ h1, h2, h3, h4 {
   content: '';
   position: absolute;
   inset: 0;
-  background: rgba(30,61,47,0.38);
+  background: rgba(31,74,31,0.38);
   opacity: 0;
   transition: opacity 0.3s;
 }
 .insta-item:hover::after { opacity: 1; }
-.insta-item:nth-child(1) { background: linear-gradient(150deg,#2C5540,#1E3D2F); }
-.insta-item:nth-child(2) { background: linear-gradient(150deg,#3D6B5A,#2C5540); }
+.insta-item:nth-child(1) { background: linear-gradient(150deg,#2F5E2F,#1F4A1F); }
+.insta-item:nth-child(2) { background: linear-gradient(150deg,#3D6B5A,#2F5E2F); }
 .insta-item:nth-child(3) { background: linear-gradient(150deg,#96723F,#6B4F28); }
 .insta-item:nth-child(4) { background: linear-gradient(150deg,#3C4E82,#252F5A); }
 .insta-item:nth-child(5) { background: linear-gradient(150deg,#703860,#4A2845); }
@@ -897,7 +897,7 @@ h1, h2, h3, h4 {
   padding: calc(var(--nav-height) + 60px) var(--container-pad) 90px;
   background:
     radial-gradient(ellipse at 65% 35%, rgba(139,175,155,0.12) 0%, transparent 55%),
-    linear-gradient(155deg, #1E3D2F 0%, #2C5540 55%, #162E23 100%);
+    linear-gradient(155deg, #1F4A1F 0%, #2F5E2F 55%, #143014 100%);
   color: var(--white);
 }
 
@@ -1364,3 +1364,84 @@ h1, h2, h3, h4 {
   .btn { width: 100%; justify-content: center; }
   .page-hero { padding-top: calc(var(--nav-height) + 50px); padding-bottom: 50px; }
 }
+
+
+/* ============================================
+   2026-11 修正: 茶話会リニューアル
+   ============================================ */
+.hero__title--latin { font-size: clamp(2.8rem, 6vw, 5.6rem); font-weight: 300; line-height: 1; }
+.hero__subtitle--wide { max-width: 560px; margin-bottom: 0; }
+.hero__vertical {
+  position: absolute;
+  top: calc(var(--nav-height) + 3rem);
+  right: var(--container-pad);
+  z-index: 2;
+  writing-mode: vertical-rl;
+  font-family: 'Noto Serif JP', serif;
+  font-size: clamp(0.95rem, 1.3vw, 1.2rem);
+  letter-spacing: 0.5em;
+  color: var(--white);
+  padding-right: 0.9rem;
+  border-right: 1px solid var(--gold);
+}
+
+/* Home: next event / projects */
+.events-home { padding: var(--section-gap) var(--container-pad); background: var(--cream); }
+.events-home__inner { max-width: var(--max-width); margin: 0 auto; }
+.event-grid { display: grid; grid-template-columns: 3fr 2fr; gap: 2rem; margin-top: 3rem; }
+.event-card { background: var(--white); border-top: 3px solid var(--gold); padding: clamp(1.75rem, 3vw, 2.75rem); }
+.event-card--project { background: var(--green-dark); color: var(--cream); }
+.event-card__status {
+  display: inline-block; font-size: 0.68rem; letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--gold); border: 1px solid var(--gold); padding: 0.25rem 0.75rem; margin-bottom: 1.25rem;
+}
+.event-card__title { font-family: 'Noto Serif JP', serif; font-size: var(--size-h3); font-weight: 400; line-height: 1.4; margin-bottom: 1.5rem; }
+.event-card__meta { display: grid; gap: 0.6rem; margin-bottom: 1.5rem; }
+.event-card__meta div { display: grid; grid-template-columns: 6.5rem 1fr; gap: 1rem; border-bottom: 1px solid var(--cream-dark); padding-bottom: 0.6rem; }
+.event-card__meta dt { font-size: 0.8rem; color: var(--text-muted); letter-spacing: 0.08em; }
+.event-card__meta dd { font-size: 0.92rem; }
+.event-card__note { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.5rem; }
+.event-card__text { font-size: 0.92rem; line-height: 1.95; opacity: 0.85; }
+.events-home__more { margin-top: 2.5rem; text-align: center; }
+
+/* About: timeline era label */
+.tl-era { display: block; font-size: 0.78rem; letter-spacing: 0.12em; color: var(--gold); margin-top: 0.3rem; }
+
+/* Services: sales channels */
+.channels { background: var(--green-mid); color: var(--white); padding: var(--section-gap) var(--container-pad); text-align: center; }
+.channels__title { font-family: var(--font-serif); font-size: var(--size-h2); font-weight: 300; line-height: 1.25; margin-bottom: 3.5rem; }
+.channels__grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5rem; text-align: left; }
+.channel { border-top: 1px solid var(--gold); padding-top: 1.5rem; }
+.channel__num { font-family: var(--font-serif); color: var(--gold); font-size: 0.95rem; margin-bottom: 0.75rem; }
+.channel__title { font-family: 'Noto Serif JP', serif; font-size: 1.15rem; font-weight: 400; margin-bottom: 0.9rem; line-height: 1.4; }
+.channel__desc { font-size: 0.88rem; line-height: 1.9; opacity: 0.82; }
+.channel__link { display: inline-block; margin-top: 1rem; font-size: 0.82rem; letter-spacing: 0.08em; border-bottom: 1px solid currentColor; padding-bottom: 2px; }
+
+/* Services: wholesale facts */
+.ws-facts { background: var(--cream); padding: clamp(60px, 8vw, 100px) var(--container-pad); }
+.ws-facts__grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3rem; }
+.ws-fact__label { font-size: 0.68rem; letter-spacing: 0.24em; text-transform: uppercase; color: var(--green-mid); margin-bottom: 1rem; }
+.ws-fact__big { font-family: var(--font-serif); font-size: clamp(3.5rem, 7vw, 5.5rem); line-height: 1; color: var(--green-dark); margin-bottom: 1rem; }
+.ws-fact__big span { font-family: 'Noto Serif JP', serif; font-size: 1.1rem; margin-left: 0.4rem; color: var(--gold); }
+.ws-fact__list { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.5rem 0 1.25rem; }
+.ws-fact__list li { border: 1px solid var(--green-dark); padding: 0.35rem 0.9rem; font-family: var(--font-serif); font-size: 1.1rem; color: var(--green-dark); }
+.ws-fact__desc { font-size: 0.9rem; line-height: 1.9; color: var(--text-muted); }
+
+/* Services: past events */
+.track { background: var(--cream); padding: var(--section-gap) var(--container-pad); }
+.track__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; margin-top: 3rem; }
+.track__head { font-family: 'Noto Serif JP', serif; font-size: 1.1rem; font-weight: 400; padding-bottom: 0.8rem; border-bottom: 1px solid var(--gold); margin-bottom: 1rem; }
+.track__list li { display: grid; grid-template-columns: 5.5rem 1fr; gap: 1rem; padding: 0.75rem 0; border-bottom: 1px solid var(--cream-dark); font-size: 0.95rem; }
+.track__date { font-family: var(--font-serif); color: var(--green-mid); }
+
+@media (max-width: 900px) {
+  .event-grid, .track__grid, .ws-facts__grid { grid-template-columns: 1fr; }
+  .channels__grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 560px) {
+  .channels__grid { grid-template-columns: 1fr; }
+  .hero__vertical { display: none; }
+  .hero__scroll { display: none; }
+}
+.ws-fact__big, .track__date, .channel__num, .tl-year { font-variant-numeric: lining-nums; }
+.track__date { font-family: var(--font-sans); font-size: 0.85rem; letter-spacing: 0.06em; }
