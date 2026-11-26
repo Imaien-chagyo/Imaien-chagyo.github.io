@@ -47,45 +47,28 @@ const ICON = {
 };
 
 /* ================= 認証 ================= */
-function jwtPayload(t) {
+/* ログイン用URL（imaien.com 内のユーザーのみ）で署名付きトークンを受け取り、#login= で戻ってくる */
+(function takeLoginFromHash() {
+  const m = /[#&]login=([\w.-]+)/.exec(location.hash);
+  if (m) { token = m[1]; localStorage.setItem('ip_token', token); history.replaceState(null, '', location.pathname + '#/'); }
+})();
+function tokenInfo(t) {
   try {
     const b = t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
     const bin = atob(b + '==='.slice((b.length + 3) % 4));
     return JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0))));
   } catch (e) { return null; }
 }
-function tokenValid() { if (DEMO) return true; const p = token && jwtPayload(token); return !!(p && p.exp * 1000 - Date.now() > 60000); }
-
-let gsiReady = false;
-function initGsi() {
-  if (gsiReady || !window.google || !google.accounts) return !!gsiReady;
-  google.accounts.id.initialize({
-    client_id: CONFIG.CLIENT_ID, callback: onCredential, auto_select: true,
-    hd: CONFIG.DOMAIN, cancel_on_tap_outside: false, use_fedcm_for_prompt: true, itp_support: true
-  });
-  gsiReady = true; return true;
-}
-function onCredential(resp) {
-  token = resp.credential; localStorage.setItem('ip_token', token);
-  const p = jwtPayload(token);
-  if (!p || p.hd !== CONFIG.DOMAIN) { token = ''; localStorage.removeItem('ip_token'); showLogin('@' + CONFIG.DOMAIN + ' のアカウントでログインしてください'); return; }
-  start();
-}
+function tokenValid() { if (DEMO) return true; const p = token && tokenInfo(token); return !!(p && p.x - Date.now() > 60000); }
 function showLogin(msg) {
   shell.innerHTML = '<div class="top"><div class="top-row"><div style="display:flex;flex-direction:column;gap:2px"><span class="title">今井園ポータル</span></div></div></div>' +
-    '<div class="login"><h1>ログイン</h1><p>@' + esc(CONFIG.DOMAIN) + ' のGoogleアカウントでログインしてください。</p><div id="gbtn"></div>' +
+    '<div class="login"><h1>ログイン</h1><p>@' + esc(CONFIG.DOMAIN) + ' のGoogleアカウントでログインします。<br>次の画面で「ポータルに戻る」を押してください。</p>' +
+    '<a class="btn primary" style="min-width:240px" href="' + esc(CONFIG.LOGIN_URL) + '">Googleアカウントでログイン</a>' +
     (msg ? '<p class="err">' + esc(msg) + '</p>' : '') + '</div>';
-  const tryRender = () => {
-    if (!initGsi()) { setTimeout(tryRender, 200); return; }
-    google.accounts.id.renderButton(document.getElementById('gbtn'), { theme: 'outline', size: 'large', shape: 'pill', text: 'signin_with', locale: 'ja', width: 260 });
-    google.accounts.id.prompt();
-  };
-  tryRender();
 }
 function logout() {
   if (!confirm('ログアウトしますか')) return;
   token = ''; localStorage.removeItem('ip_token'); localStorage.removeItem('ip_data');
-  if (window.google && google.accounts) google.accounts.id.disableAutoSelect();
   D = null; showLogin();
 }
 
