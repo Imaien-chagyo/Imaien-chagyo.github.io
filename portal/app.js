@@ -8,7 +8,7 @@ const shell = document.getElementById('shell');
 const DEMO = !!window.DEMO_DATA;
 let D = null;            // サーバーから受け取ったデータ（加工済み）
 let token = localStorage.getItem('ip_token') || '';
-let ui = { salesTab: 'w', orderChip: 'active', orderQ: '', custChip: 'all', custQ: '', showAllActions: false, sel: null, edit: false };
+let ui = { stockLoc: 'all', stockQ: '', salesTab: 'w', orderChip: 'active', orderQ: '', custChip: 'all', custQ: '', showAllActions: false, sel: null, edit: false };
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const num = (v) => (typeof v === 'number' ? v : parseFloat(v)) || 0;
@@ -132,8 +132,37 @@ function setData(raw) {
   d.tMap = {}; d.tasks.forEach((t) => { d.tMap[t['タスクID']] = t; });
   d.projects = d.projects || []; d.pjMap = {}; d.projects.forEach((x) => { d.pjMap[x['プロジェクトID']] = x; });
   D = d;
+  buildStock(d);
   render();
 }
+function isStockItem(p) { return !!p && !(p['在庫管理'] === false || String(p['在庫管理']).toUpperCase() === 'FALSE'); }
+function r3(x) { return Math.round(x * 1000) / 1000; }
+function buildStock(d) {
+  const S = {};
+  const grp = (pid, loc) => { const k = pid + '|' + loc; return S[k] || (S[k] = { pid, loc, qty: 0, safe: 0, lots: {} }); };
+  (d.movements || []).forEach((m) => {
+    const g = grp(m['商品'], m['拠点']); const q = num(m['数量']); g.qty += q;
+    const lk = String(m['ロット'] || ''); const l = g.lots[lk] || (g.lots[lk] = { lot: lk, exp: '', qty: 0 });
+    l.qty += q; if (m['賞味期限']) l.exp = m['賞味期限'];
+  });
+  (d.safety || []).forEach((x) => { grp(x['商品'], x['拠点']).safe = num(x['安全在庫']); });
+  d.stock = Object.keys(S).map((k) => {
+    const g = S[k]; g.qty = r3(g.qty); g.p = d.pMap[g.pid] || { '商品名': g.pid, '単位': '' };
+    g.lotList = Object.keys(g.lots).map((x) => g.lots[x]).map((l) => { l.qty = r3(l.qty); return l; }).filter((l) => l.qty !== 0)
+      .sort((a, b) => (a.exp || '9999').localeCompare(b.exp || '9999'));
+    g.low = g.safe > 0 && g.qty < g.safe;
+    g.expiring = g.lotList.filter((l) => l.qty > 0 && l.exp && dayDiff(l.exp) <= 90);
+    return g;
+  });
+  d.sMap = {}; d.stock.forEach((g) => { d.sMap[g.pid + '|' + g.loc] = g; });
+  d.stockActs = [];
+  d.stock.forEach((g) => {
+    const label = (g.p['商品名'] || '') + '（' + g.loc + '）';
+    if (g.low) d.stockActs.push({ '作業': '発注の検討', '案件名': label, '期日': d.today, href: '#/stock-item/' + encodeURIComponent(g.pid) });
+    g.expiring.forEach((l) => d.stockActs.push({ '作業': '優先販売の検討', '案件名': label + (l.lot ? ' ' + l.lot : ''), '期日': addDays(l.exp, -90), href: '#/stock-item/' + encodeURIComponent(g.pid) }));
+  });
+}
+function unitOf(pid) { return (D.pMap[pid] || {})['単位'] || ''; }
 function custLabel(c) { return (c['取引先名'] || '') + (c['国'] && c['国'] !== 'JP' ? '（' + c['国'] + '）' : ''); }
 function phaseOf(c) { if (c['フェーズ']) return String(c['フェーズ']); const m = /フェーズ: ([^、\n]+)/.exec(c['メモ'] || ''); return m ? m[1].trim() : ''; }
 function fyStart() { const t = todayStr(); const y = +t.slice(0, 4), m = +t.slice(5, 7); return (m >= 4 ? y : y - 1) + '-04'; }
@@ -149,7 +178,7 @@ function tabOf(p) {
   const k = p[0] || '';
   if (/^(order|orders|new-order)$/.test(k)) return 'orders';
   if (/^(sales|customer|customer-edit|project-edit)$/.test(k)) return 'sales';
-  if (/^(stock|product-edit)$/.test(k)) return 'stock';
+  if (/^(stock|stock-item|stock-op|stocktake|products|product-edit)$/.test(k)) return 'stock';
   if (/^(input|task|task-edit)$/.test(k)) return 'input';
   return 'dash';
 }
@@ -178,6 +207,10 @@ function render() {
     case 'customer-edit': html = viewCustomerForm(decodeURIComponent(p[1] || 'new'), r.q.get('phase') || ''); break;
     case 'project-edit': html = viewProjectForm(decodeURIComponent(p[1] || 'new')); break;
     case 'stock': html = viewStock(); break;
+    case 'stock-item': html = viewStockItem(decodeURIComponent(p[1] || '')); break;
+    case 'stock-op': html = viewStockOp(p[1] || 'in', r.q); break;
+    case 'stocktake': html = viewStocktake(r.q.get('l') || CONFIG.LOCATIONS[0]); break;
+    case 'products': html = viewProducts(); break;
     case 'product-edit': html = viewProductForm(decodeURIComponent(p[1] || 'new')); break;
     case 'input': html = viewInput(); break;
     case 'task': html = viewTask(decodeURIComponent(p[1] || '')); break;
@@ -186,6 +219,7 @@ function render() {
   }
   shell.innerHTML = html + nav(tabOf(p));
   if (p[0] === 'new-order') initOrderForm();
+  if (p[0] === 'stock-op') updStockOp();
 }
 
 /* ================= ダッシュボード ================= */
@@ -211,11 +245,11 @@ function viewDash() {
   const so = sum(over), sn = sum(notyet);
   const payBar = (so + sn) > 0 ? '<div class="pay-bar">' + (so ? '<div style="flex:' + so + '"></div>' : '') + (sn ? '<div style="flex:' + sn + '"></div>' : '') + '</div>' : '';
 
-  const acts = D.actions.slice().sort((a, b) => (a['期日'] || '9').localeCompare(b['期日'] || '9'));
+  const acts = D.actions.concat(D.stockActs || []).sort((a, b) => (a['期日'] || '9').localeCompare(b['期日'] || '9'));
   const showN = ui.showAllActions ? acts.length : Math.min(acts.length, 10);
   const actRows = acts.slice(0, showN).map((a) => {
     const dd = due(a['期日']);
-    const href = a['種類'] === '受注' ? '#/order/' + encodeURIComponent(a['参照ID']) : '#/task/' + encodeURIComponent(a['参照ID']);
+    const href = a.href ? a.href : a['種類'] === '受注' ? '#/order/' + encodeURIComponent(a['参照ID']) : '#/task/' + encodeURIComponent(a['参照ID']);
     return '<a class="row' + (dd.over ? ' over' : '') + '" href="' + href + '"><span class="t">' + esc(a['作業']) + '</span><span class="c">' + esc(a['案件名']) + '</span><span class="pill ' + dd.cls + '">' + esc(dd.label) + '</span></a>';
   }).join('');
 
@@ -275,7 +309,7 @@ function viewOrder(id) {
   const t = todayStr();
   let actionHtml = '';
   if (!o.cancel) {
-    if (o.status === 'unshipped') actionHtml = '<div class="inline-form form"><b style="font-size:14px">出荷を記録</b><div class="two"><label>出荷日<input type="date" id="f_date" value="' + t + '"></label><label>追跡番号（任意）<input id="f_track" value="' + esc(o['追跡番号']) + '"></label></div><button class="btn primary" data-act="ship" data-id="' + esc(id) + '">出荷を記録する</button></div>';
+    if (o.status === 'unshipped') actionHtml = '<div class="inline-form form"><b style="font-size:14px">出荷を記録</b><div class="two"><label>出荷日<input type="date" id="f_date" value="' + t + '"></label><label>追跡番号（任意）<input id="f_track" value="' + esc(o['追跡番号']) + '"></label></div>' + shipStockNote(o) + '<button class="btn primary" data-act="ship" data-id="' + esc(id) + '">出荷を記録する</button></div>';
     if (o.status === 'uninvoiced') {
       const site = num(o.c['支払サイト日数']) || 30;
       actionHtml = '<div class="inline-form form"><b style="font-size:14px">請求を記録</b><label>請求日<input type="date" id="f_date" value="' + t + '"></label>' +
@@ -301,8 +335,18 @@ function viewOrder(id) {
     '<section class="card kv">' + kv.map((x) => '<div><span>' + x[0] + '</span><span>' + x[1] + '</span></div>').join('') + '</section>' +
     (o['メモ'] ? '<section class="card memo">' + esc(o['メモ']) + '</section>' : '') +
     '<div class="btns">' + (ui.edit ? '' : '<button class="btn ghost" data-act="editon">内容を編集</button>') + (undoStep && !o.cancel ? '<button class="btn ghost" data-act="undo" data-id="' + esc(id) + '" data-step="' + undoStep + '">直前の工程を取り消す</button>' : '') +
-    '<button class="btn danger" data-act="cancel" data-id="' + esc(id) + '" data-v="' + (o.cancel ? '0' : '1') + '">' + (o.cancel ? 'キャンセルを取り消す' : 'キャンセルにする') + '</button></div>' +
+    '<button class="btn danger" data-act="cancel" data-id="' + esc(id) + '" data-v="' + (o.cancel ? '0' : '1') + '">' + (o.cancel ? 'キャンセルを取り消す' : 'キャンセルにする') + '</button>' +
+    '<button class="btn danger" data-act="delorder" data-id="' + esc(id) + '">受注を削除</button></div>' +
     '</main>';
+}
+
+function shipStockNote(o) {
+  const loc = o['出荷元'];
+  const need = {}; o.lines.forEach((l) => { if (isStockItem(D.pMap[l['商品']])) need[l['商品']] = (need[l['商品']] || 0) + num(l['数量']); });
+  const ids = Object.keys(need); if (!ids.length) return '';
+  const short = ids.filter((pid) => { const g = D.sMap[pid + '|' + loc]; return (g ? g.qty : 0) < need[pid]; });
+  return '<div class="note">出荷すると、' + esc(loc) + ' の在庫から自動で差し引きます。</div>' +
+    (short.length ? '<div class="warnbox">' + short.map((pid) => { const g = D.sMap[pid + '|' + loc]; return esc((D.pMap[pid] || {})['商品名']) + '：' + esc(loc) + 'の在庫 ' + qtyFmt(g ? g.qty : 0) + unitOf(pid) + '（必要 ' + qtyFmt(need[pid]) + unitOf(pid) + '）'; }).join('<br>') + '<br>在庫が足りません。出荷元を確認してください。</div>' : '');
 }
 
 /* ---------- 受注フォーム ---------- */
@@ -449,7 +493,7 @@ function viewProjectForm(id) {
     '<div class="two">' + f('予算', '予算（円）', 'number') + f('費用', '費用の実績（円）', 'number') + '</div>' + f('収入', '収入（円）', 'number') +
     '<label>メモ<textarea data-f="メモ">' + esc(x['メモ']) + '</textarea></label></section>' +
     '<div class="note">費用と収入は、今は手で入力します。経費シートや受注との連動は第4段階で追加します。</div>' +
-    '<button class="btn primary" data-act="saveproj" data-id="' + esc(id) + '">保存する</button></main>';
+    '<button class="btn primary" data-act="saveproj" data-id="' + esc(id) + '">保存する</button>' + (id !== 'new' ? '<button class="btn danger" data-act="delproj" data-id="' + esc(id) + '">このプロジェクトを削除</button>' : '') + '</main>';
 }
 function viewCustomer(id) {
   const c = D.cMap[id];
@@ -461,7 +505,8 @@ function viewCustomer(id) {
     '<div class="btns"><button class="btn primary" data-act="open" data-href="#/new-order?c=' + encodeURIComponent(id) + '">受注を登録</button><button class="btn" data-act="open" data-href="#/customer-edit/' + encodeURIComponent(id) + '">情報を編集</button></div>' +
     '<section class="card kv">' + kv.filter((x) => x[1]).map((x) => '<div><span>' + x[0] + '</span><span>' + (String(x[1]).indexOf('<a ') === 0 ? x[1] : esc(x[1])) + '</span></div>').join('') + '</section>' +
     (c['メモ'] ? '<section class="card memo">' + esc(c['メモ']) + '</section>' : '') +
-    '<p class="sec-title">受注（' + os.length + '件）</p>' + (os.slice(0, 50).map(orderCard).join('') || '<div class="empty">まだ受注はありません</div>') + '</main>';
+    '<p class="sec-title">受注（' + os.length + '件）</p>' + (os.slice(0, 50).map(orderCard).join('') || '<div class="empty">まだ受注はありません</div>') +
+    (os.length ? '<div class="note">受注がある取引先は削除できません。先に受注を削除してください。</div>' : '<button class="btn danger" data-act="delcust" data-id="' + esc(id) + '">この取引先を削除</button>') + '</main>';
 }
 const COUNTRIES = ['JP', 'AT', 'DE', 'NL', 'IT', 'FR', 'CZ', 'SK', 'SI', 'HU', 'GB', 'US', 'AE', 'DO'];
 function viewCustomerForm(id, phase) {
@@ -483,12 +528,127 @@ function priceLabel(p) {
   if (p['標準単価（ユーロ）'] !== '' && p['標準単価（ユーロ）'] != null) a.push(eur(p['標準単価（ユーロ）']));
   return a.length ? a.join('・') + (p['単位'] ? ' /' + esc(p['単位']) : '') : '未設定';
 }
+function lotText(l) { return (l.lot ? 'ロット ' + l.lot : 'ロットなし') + (l.exp ? '・賞味期限 ' + ymd(l.exp) : ''); }
+function stockCard(g, showLoc) {
+  const u = g.p['単位'] || '';
+  const alerts = [];
+  if (g.low) alerts.push('<span class="alert amber">安全在庫 ' + qtyFmt(g.safe) + u + ' を下回っています・発注の検討</span>');
+  g.expiring.forEach((l) => { const dd = dayDiff(l.exp); alerts.push('<span class="alert red">' + (l.lot ? 'ロット ' + esc(l.lot) + '：' : '') + (dd < 0 ? '賞味期限切れ' : '賞味期限まで' + dd + '日') + '・優先販売の検討</span>'); });
+  return '<div class="ocard" data-act="open" data-href="#/stock-item/' + encodeURIComponent(g.pid) + '">' +
+    '<div class="l1"><b>' + esc(g.p['商品名']) + '</b><b style="font-size:18px' + (g.qty <= 0 ? ';color:var(--red)' : '') + '">' + qtyFmt(g.qty) + ' ' + esc(u) + '</b></div>' +
+    '<div class="note">' + (showLoc ? esc(g.loc) + (g.lotList.length ? '・' : '') : '') + g.lotList.map((l) => esc(lotText(l)) + (g.lotList.length > 1 ? '（' + qtyFmt(l.qty) + u + '）' : '')).join('、') + '</div>' + alerts.join('') + '</div>';
+}
+function stockListHtml() {
+  const q = ui.stockQ.trim().toLowerCase();
+  let gs = D.stock.filter((g) => (ui.stockLoc === 'all' || g.loc === ui.stockLoc) && (g.qty !== 0 || g.safe > 0));
+  if (q) gs = gs.filter((g) => (g.p['商品名'] || '').toLowerCase().indexOf(q) >= 0);
+  gs.sort((a, b) => ((b.low || b.expiring.length ? 1 : 0) - (a.low || a.expiring.length ? 1 : 0)) || (a.p['商品名'] || '').localeCompare(b.p['商品名'] || '', 'ja') || a.loc.localeCompare(b.loc));
+  return gs.map((g) => stockCard(g, ui.stockLoc === 'all')).join('') || '<div class="empty">在庫はありません</div>';
+}
 function viewStock() {
+  const locs = ['all'].concat(CONFIG.LOCATIONS);
+  const seg = '<div class="seg">' + locs.map((l) => '<button class="' + (ui.stockLoc === l ? 'on' : '') + '" data-act="sloc" data-v="' + esc(l) + '">' + (l === 'all' ? '全拠点' : esc(l)) + '</button>').join('') + '</div>';
+  const inLoc = D.stock.filter((g) => ui.stockLoc === 'all' || g.loc === ui.stockLoc);
+  const low = inLoc.filter((g) => g.low).length, exp = inLoc.reduce((n, g) => n + g.expiring.length, 0);
+  return top('在庫管理', { extra: seg }) + '<main class="view" style="gap:12px">' +
+    '<div class="two-cards"><div class="kpi" style="background:var(--amber-ll)"><span>安全在庫を下回る</span><b style="color:var(--amber)">' + low + '品目</b></div><div class="kpi" style="background:var(--red-bg)"><span>賞味期限まで90日以内</span><b style="color:var(--red)">' + exp + 'ロット</b></div></div>' +
+    '<div class="tiles four"><button class="tile" data-act="open" data-href="#/stock-op/in">入庫</button><button class="tile" data-act="open" data-href="#/stock-op/out">出庫</button><button class="tile" data-act="open" data-href="#/stock-op/move">在庫移動</button><button class="tile" data-act="open" data-href="#/stocktake' + (ui.stockLoc !== 'all' ? '?l=' + encodeURIComponent(ui.stockLoc) : '') + '">棚卸</button></div>' +
+    '<input class="search" type="search" placeholder="商品名で検索" value="' + esc(ui.stockQ) + '" data-input="stockQ"><div id="slist" style="display:flex;flex-direction:column;gap:12px">' + stockListHtml() + '</div>' +
+    '<a class="btn ghost" href="#/products">商品マスタ（' + D.products.length + '件）</a></main>';
+}
+function viewStockItem(pid) {
+  const p = D.pMap[pid];
+  if (!p) return top('在庫', { back: true }) + '<main class="view"><div class="empty">商品が見つかりません</div></main>';
+  const u = p['単位'] || '';
+  const total = r3(D.stock.filter((g) => g.pid === pid).reduce((s, g) => s + g.qty, 0));
+  const locCards = CONFIG.LOCATIONS.map((loc) => {
+    const g = D.sMap[pid + '|' + loc] || { qty: 0, safe: 0, lotList: [], low: false, expiring: [] };
+    return '<section class="card pad" style="display:flex;flex-direction:column;gap:8px"><div class="h2row"><b>' + esc(loc) + '</b><b style="font-size:17px' + (g.low ? ';color:var(--amber)' : '') + '">' + qtyFmt(g.qty) + ' ' + esc(u) + '</b></div>' +
+      (g.lotList.length ? g.lotList.map((l) => '<div class="h2row note"><span>' + esc(lotText(l)) + '</span><span>' + qtyFmt(l.qty) + u + '</span></div>').join('') : '') +
+      '<div class="form" style="gap:6px"><div class="safe-row"><span class="note">安全在庫</span><input type="number" step="any" inputmode="decimal" id="safe_' + esc(loc) + '" value="' + (g.safe || '') + '" placeholder="未設定"><span class="note">' + esc(u) + '</span><button class="btn ghost" style="min-height:40px" data-act="savesafe" data-id="' + esc(pid) + '" data-loc="' + esc(loc) + '">保存</button></div></div></section>';
+  }).join('');
+  const hist = D.movements.filter((m) => m['商品'] === pid).slice().sort((a, b) => (b['日付'] || '').localeCompare(a['日付'] || '') || String(b['移動ID']).localeCompare(String(a['移動ID']))).slice(0, 40);
+  const histRows = hist.map((m) => { const q = num(m['数量']); return '<div class="hist"><div><b>' + esc(m['種別']) + '</b>　' + esc(m['拠点']) + (m['ロット'] ? '・' + esc(m['ロット']) : '') + '<div class="note">' + md(m['日付']) + (m['メモ'] ? '　' + esc(m['メモ']) : '') + '</div></div><span class="' + (q < 0 ? 'neg' : 'pos') + '">' + (q > 0 ? '+' : '') + qtyFmt(q) + u + '</span><button class="x" data-act="delmove" data-id="' + esc(m['移動ID']) + '" aria-label="この記録を削除">×</button></div>'; }).join('');
+  const q = '?p=' + encodeURIComponent(pid);
+  return top(p['商品名'], { back: true }) + '<main class="view" style="gap:12px">' +
+    '<section class="kpis" style="grid-template-columns:1fr"><div class="kpi"><span>全拠点の合計</span><b>' + qtyFmt(total) + ' ' + esc(u) + '</b></div></section>' +
+    '<div class="tiles"><button class="tile" data-act="open" data-href="#/stock-op/in' + q + '">入庫</button><button class="tile" data-act="open" data-href="#/stock-op/out' + q + '">出庫</button><button class="tile" data-act="open" data-href="#/stock-op/move' + q + '">在庫移動</button><button class="tile" data-act="open" data-href="#/product-edit/' + encodeURIComponent(pid) + '">商品の情報</button></div>' +
+    locCards + '<p class="sec-title">入出庫の記録</p><div class="card">' + (histRows || '<div class="empty">記録はありません</div>') + '</div>' +
+    '<div class="note">間違えて登録した記録は × で削除できます。在庫移動は、移動元と移動先の両方の記録が消えます。</div></main>';
+}
+const OP = { in: '入庫', out: '出庫', move: '在庫移動' };
+function stockProducts() { return D.products.filter((x) => isStockItem(x)).sort((a, b) => (a['商品名'] || '').localeCompare(b['商品名'] || '', 'ja')); }
+function viewStockOp(kind, q) {
+  if (!OP[kind]) kind = 'in';
+  const pid = q.get('p') || ''; const loc = q.get('l') || (ui.stockLoc !== 'all' ? ui.stockLoc : CONFIG.LOCATIONS[0]);
+  const prodSel = '<label>商品<select id="so_p"><option value="">選んでください</option>' + stockProducts().map((x) => '<option value="' + esc(x['商品ID']) + '"' + (x['商品ID'] === pid ? ' selected' : '') + '>' + esc(x['商品名']) + '</option>').join('') + '</select></label>';
+  const locSel = (id, label, v) => '<label>' + label + '<select id="' + id + '">' + CONFIG.LOCATIONS.map((l) => '<option' + (l === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></label>';
+  let body = prodSel;
+  if (kind === 'in') body += '<div class="two">' + locSel('so_loc', '入庫先', loc) + '<label>数量<input id="so_qty" type="number" step="any" inputmode="decimal"></label></div>' +
+    '<div class="two"><label>ロット（任意）<input id="so_lot" placeholder="例：2611-A"></label><label>賞味期限（任意）<input id="so_exp" type="date"></label></div>' +
+    '<label>入庫日<input id="so_date" type="date" value="' + todayStr() + '"></label><label>メモ（任意）<input id="so_memo" placeholder="例：堀口園から仕入"></label>';
+  if (kind === 'out') body += '<div class="two">' + locSel('so_loc', '出庫元', loc) + '<label>数量<input id="so_qty" type="number" step="any" inputmode="decimal"></label></div>' +
+    '<label>ロット<select id="so_lot"></select></label><label>理由・メモ<input id="so_memo" placeholder="例：サンプル送付、自店で使用"></label>';
+  if (kind === 'move') body += '<div class="two">' + locSel('so_loc', '移動元', loc) + locSel('so_to', '移動先', CONFIG.LOCATIONS.find((l) => l !== loc)) + '</div>' +
+    '<div class="two"><label>数量<input id="so_qty" type="number" step="any" inputmode="decimal"></label><label>ロット<select id="so_lot"></select></label></div><label>メモ（任意）<input id="so_memo"></label>';
+  return top(OP[kind] + 'を記録', { back: true }) + '<main class="view" style="gap:12px"><section class="card pad form" id="soform" data-kind="' + kind + '">' + body + '</section>' +
+    '<div class="infobox" id="so_info"></div>' + (kind !== 'in' ? '<div class="note">ロットを「自動」にすると、賞味期限が近いロットから順に差し引きます。受注の出荷を記録したときも、同じ順で自動的に差し引かれます。</div>' : '') +
+    '<button class="btn primary" data-act="saveop" data-v="' + kind + '">記録する</button></main>';
+}
+function updStockOp() {
+  const f = document.getElementById('soform'); if (!f) return;
+  const kind = f.dataset.kind; const pid = val('so_p'); const loc = val('so_loc'); const u = unitOf(pid);
+  const g = D.sMap[pid + '|' + loc];
+  const lotSel = document.getElementById('so_lot');
+  if (lotSel && lotSel.tagName === 'SELECT') {
+    const had = lotSel.options.length > 0; const cur = lotSel.value;
+    lotSel.innerHTML = '<option value="__auto">自動（賞味期限が近い順）</option>' + (g ? g.lotList.filter((l) => l.qty > 0).map((l) => '<option value="' + esc(l.lot) + '">' + esc(lotText(l)) + '（' + qtyFmt(l.qty) + u + '）</option>').join('') : '');
+    if (had && [...lotSel.options].some((o) => o.value === cur)) lotSel.value = cur;
+  }
+  document.querySelectorAll('#so_qty').forEach((e) => { e.placeholder = u; });
+  const info = document.getElementById('so_info');
+  if (!pid) { info.innerHTML = '<span>商品を選ぶと、今の在庫が表示されます。</span>'; return; }
+  const line = (l) => { const x = D.sMap[pid + '|' + l]; return esc(l) + '　' + qtyFmt(x ? x.qty : 0) + u + (x && x.safe ? '（安全在庫 ' + qtyFmt(x.safe) + u + '）' : ''); };
+  info.innerHTML = '<b>今の在庫</b>' + CONFIG.LOCATIONS.map((l) => '<span>' + line(l) + '</span>').join('');
+}
+async function saveStockOp(kind) {
+  const base = { productId: val('so_p'), qty: val('so_qty'), memo: val('so_memo') };
+  if (!base.productId || !(num(base.qty) > 0)) { alert('商品と数量を入力してください'); return; }
+  let action, payload;
+  if (kind === 'in') { action = 'stockIn'; payload = Object.assign(base, { location: val('so_loc'), lot: val('so_lot').trim(), expiry: val('so_exp'), date: val('so_date') }); }
+  if (kind === 'out') { action = 'stockOut'; payload = Object.assign(base, { location: val('so_loc'), lot: val('so_lot') }); }
+  if (kind === 'move') {
+    if (val('so_loc') === val('so_to')) { alert('移動元と移動先が同じです'); return; }
+    action = 'stockMove'; payload = Object.assign(base, { from: val('so_loc'), to: val('so_to'), lot: val('so_lot') });
+  }
+  if (kind !== 'in') { const g = D.sMap[base.productId + '|' + (payload.location || payload.from)]; if ((g ? g.qty : 0) < num(base.qty) && !confirm('在庫（' + qtyFmt(g ? g.qty : 0) + unitOf(base.productId) + '）より多い数量です。このまま記録しますか')) return; }
+  if (await write(action, payload, OP[kind] + 'を記録しました')) go('#/stock-item/' + encodeURIComponent(base.productId));
+}
+function viewStocktake(loc) {
+  const gs = D.stock.filter((g) => g.loc === loc && (g.qty !== 0 || g.safe > 0)).sort((a, b) => (a.p['商品名'] || '').localeCompare(b.p['商品名'] || '', 'ja'));
+  const rows = [];
+  gs.forEach((g) => { const lots = g.lotList.length ? g.lotList : [{ lot: '', exp: '', qty: 0 }]; lots.forEach((l) => rows.push({ g, l })); });
+  const rowHtml = rows.map((x, i) => '<div class="take-row" data-pid="' + esc(x.g.pid) + '" data-lot="' + esc(x.l.lot) + '" data-cur="' + x.l.qty + '"><div><b>' + esc(x.g.p['商品名']) + '</b><div class="note">' + esc(lotText(x.l)) + '・帳簿 ' + qtyFmt(x.l.qty) + esc(x.g.p['単位'] || '') + '</div></div><input type="number" step="any" inputmode="decimal" value="' + x.l.qty + '" aria-label="実際の数量"></div>').join('');
+  return top('棚卸', { back: true }) + '<main class="view" style="gap:12px"><section class="card pad form"><label>拠点<select id="tk_loc">' + CONFIG.LOCATIONS.map((l) => '<option' + (l === loc ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></label>' +
+    '<div class="note">実際に数えた数量に書き換えてください。帳簿と違うものだけ「棚卸調整」として記録します。</div></section>' +
+    '<section class="card" id="tk_rows">' + (rowHtml || '<div class="empty">この拠点の在庫はありません</div>') + '</section>' +
+    '<section class="card pad form" id="tk_new"><b style="font-size:13px">一覧にない商品を追加</b><div class="line-item" style="grid-template-columns:minmax(0,1fr) 88px"><label>商品<select id="tkn_p"><option value="">選択</option>' + stockProducts().map((x) => '<option value="' + esc(x['商品ID']) + '">' + esc(x['商品名']) + '</option>').join('') + '</select></label><label>数量<input id="tkn_q" type="number" step="any" inputmode="decimal"></label></div>' +
+    '<div class="two"><label>ロット（任意）<input id="tkn_lot"></label><label>賞味期限（任意）<input id="tkn_exp" type="date"></label></div></section>' +
+    '<button class="btn primary" data-act="savetake">棚卸を記録する</button></main>';
+}
+async function saveStocktake() {
+  const loc = val('tk_loc'); const items = [];
+  document.querySelectorAll('#tk_rows .take-row').forEach((r) => { const v = r.querySelector('input').value; if (v !== '' && num(v) !== num(r.dataset.cur)) items.push({ productId: r.dataset.pid, lot: r.dataset.lot, actual: num(v) }); });
+  if (val('tkn_p') && val('tkn_q') !== '') items.push({ productId: val('tkn_p'), lot: val('tkn_lot').trim(), expiry: val('tkn_exp'), actual: num(val('tkn_q')) });
+  if (!items.length) { alert('帳簿と違う数量がありません'); return; }
+  if (!confirm(items.length + '件の差を棚卸調整として記録します')) return;
+  if (await write('stocktake', { location: loc, items }, '棚卸を記録しました')) { ui.stockLoc = loc; go('#/stock'); }
+}
+function viewProducts() {
   const ps = D.products.slice().sort((a, b) => (a['商品名'] || '').localeCompare(b['商品名'] || '', 'ja'));
   const rows = ps.map((p) => '<a class="row" href="#/product-edit/' + encodeURIComponent(p['商品ID']) + '"' + (truthy(p['販売中']) ? '' : ' style="opacity:.5"') + '><span class="c" style="color:var(--ink);font-weight:500">' + esc(p['商品名']) + '</span><span class="note" style="flex:none">' +
     priceLabel(p) + '</span></a>').join('');
-  return top('在庫') + '<main class="view" style="gap:12px"><div class="warnbox">在庫数の表示は第2段階で追加します。それまでは在庫管理アプリをお使いください。</div>' +
-    '<a class="btn" href="' + esc(CONFIG.WAREHOUSE_URL) + '" target="_blank" rel="noopener">在庫管理アプリを開く</a>' +
+  return top('商品マスタ', { back: true }) + '<main class="view" style="gap:12px">' +
     '<div class="h2row"><p class="sec-title">商品（' + ps.length + '件）</p><span class="note">標準単価</span></div><div class="card list">' + rows + '</div>' +
     '<button class="btn primary" data-act="open" data-href="#/product-edit/new">＋ 商品を追加</button></main>';
 }
@@ -498,7 +658,9 @@ function viewProductForm(id) {
   return top(id === 'new' ? '商品を追加' : '商品を編集', { back: true }) + '<main class="view" style="gap:12px"><section class="card pad form" id="pform">' + f('商品名', '商品名') + f('英語の商品名', '英語の商品名（英語の請求書用）') +
     '<label>単位<select data-f="単位">' + ['kg', '個', '袋'].map((x) => '<option' + (x === p['単位'] ? ' selected' : '') + '>' + x + '</option>').join('') + '</select></label>' +
     '<div class="two">' + f('標準単価（円）', '標準単価（円）', 'number') + f('標準単価（ユーロ）', '標準単価（ユーロ）', 'number') + '</div>' +
-    '<label class="check"><input type="checkbox" data-f="販売中"' + (truthy(p['販売中']) ? ' checked' : '') + '>販売中</label></section><button class="btn primary" data-act="saveprod" data-id="' + esc(id) + '">保存する</button></main>';
+    '<label class="check"><input type="checkbox" data-f="販売中"' + (truthy(p['販売中']) ? ' checked' : '') + '>販売中</label>' +
+    '<label class="check"><input type="checkbox" data-f="在庫管理"' + (id === 'new' || isStockItem(p) ? ' checked' : '') + '>在庫を管理する（サービスや配送料は外す）</label></section><button class="btn primary" data-act="saveprod" data-id="' + esc(id) + '">保存する</button>' +
+    (id !== 'new' ? '<button class="btn danger" data-act="delprod" data-id="' + esc(id) + '">この商品を削除</button>' : '') + '</main>';
 }
 
 /* ================= 入力 ================= */
@@ -515,6 +677,9 @@ function viewInput() {
     '<section style="display:flex;flex-direction:column;gap:8px"><p class="note" style="margin:0">営業</p><div class="tiles">' +
     '<button class="tile" data-act="open" data-href="#/customer-edit/new?phase=' + encodeURIComponent('パイプライン') + '">リードを追加<small>営業先の候補</small></button>' +
     '<button class="tile" data-act="open" data-href="#/project-edit/new">プロジェクトを追加<small>進行中 ' + D.projects.filter((x) => (x['状態'] || '進行中') === '進行中').length + '件</small></button></div></section>' +
+    '<section style="display:flex;flex-direction:column;gap:8px"><p class="note" style="margin:0">在庫</p><div class="tiles">' +
+    '<button class="tile" data-act="open" data-href="#/stock-op/in">入庫</button><button class="tile" data-act="open" data-href="#/stock-op/out">出庫</button>' +
+    '<button class="tile" data-act="open" data-href="#/stock-op/move">在庫移動</button><button class="tile" data-act="open" data-href="#/stocktake">棚卸</button></div></section>' +
     '<section style="display:flex;flex-direction:column;gap:8px"><p class="note" style="margin:0">マスタ</p><div class="tiles">' +
     '<button class="tile" data-act="open" data-href="#/customer-edit/new">取引先を追加</button><button class="tile" data-act="open" data-href="#/product-edit/new">商品を追加</button></div></section>' +
     '<section style="display:flex;flex-direction:column;gap:8px"><p class="note" style="margin:0">その他</p><div class="tiles">' +
@@ -555,6 +720,15 @@ document.addEventListener('click', async (ev) => {
     case 'cchip': ui.custChip = el.dataset.v; render(); break;
     case 'gopj': ev.preventDefault(); ui.salesTab = 'p'; go('#/sales'); break;
     case 'stab': ui.salesTab = el.dataset.v; render(); break;
+    case 'sloc': ui.stockLoc = el.dataset.v; render(); break;
+    case 'saveop': await saveStockOp(el.dataset.v); break;
+    case 'savetake': await saveStocktake(); break;
+    case 'savesafe': { const v = val('safe_' + el.dataset.loc); await write('saveSafety', { productId: id, location: el.dataset.loc, value: v }, '安全在庫を保存しました'); break; }
+    case 'delmove': if (confirm('この記録を削除しますか（在庫数が元に戻ります）')) await write('deleteMove', { id }, '削除しました'); break;
+    case 'delorder': if (confirm('この受注を削除しますか。明細と、出荷で差し引いた在庫の記録も消えます。元に戻せません')) { if (await write('deleteOrder', { id }, '受注を削除しました')) go('#/orders'); } break;
+    case 'delcust': if (confirm('この取引先を削除しますか。元に戻せません')) { if (await write('deleteCustomer', { id }, '取引先を削除しました')) go('#/sales'); } break;
+    case 'delproj': if (confirm('このプロジェクトを削除しますか。元に戻せません')) { if (await write('deleteProject', { id }, '削除しました')) { ui.salesTab = 'p'; go('#/sales'); } } break;
+    case 'delprod': if (confirm('この商品を削除しますか。元に戻せません')) { if (await write('deleteProduct', { id }, '削除しました')) go('#/products'); } break;
     case 'saveproj': { const v = formVals('#pjform'); if (!v['プロジェクト名']) { alert('プロジェクト名を入力してください'); break; } if (id !== 'new') v['プロジェクトID'] = id; if (await write('saveProject', v, '保存しました')) { ui.salesTab = 'p'; go('#/sales'); } break; }
     case 'editon': ui.edit = true; render(); break;
     case 'editoff': ui.edit = false; render(); break;
@@ -568,7 +742,7 @@ document.addEventListener('click', async (ev) => {
     case 'rmline': { const w = document.getElementById('of_lines'); if (w.children.length > 1) el.closest('.line-item').remove(); updOrderForm(); break; }
     case 'createorder': await createOrder(); break;
     case 'savecust': { const v = formVals('#cform'); if (!v['取引先名']) { alert('取引先名を入力してください'); break; } if (id !== 'new') v['取引先ID'] = id; const before = new Set(D.customers.map((c) => c['取引先ID'])); if (await write('saveCustomer', v, '保存しました')) { const n = id !== 'new' ? D.cMap[id] : D.customers.find((c) => !before.has(c['取引先ID'])); go(n ? '#/customer/' + encodeURIComponent(n['取引先ID']) : '#/sales'); } break; }
-    case 'saveprod': { const v = formVals('#pform'); if (!v['商品名']) { alert('商品名を入力してください'); break; } if (id !== 'new') v['商品ID'] = id; if (await write('saveProduct', v, '保存しました')) go('#/stock'); break; }
+    case 'saveprod': { const v = formVals('#pform'); if (!v['商品名']) { alert('商品名を入力してください'); break; } if (id !== 'new') v['商品ID'] = id; if (await write('saveProduct', v, '保存しました')) go('#/products'); break; }
     case 'savetask': { const v = formVals('#tform'); if (!v['作業'] || !v['期日']) { alert('作業と期日を入力してください'); break; } if (await write('saveTask', v, 'タスクを登録しました')) go('#/'); break; }
     case 'donetask': if (await write('completeTask', { id }, '完了にしました')) go('#/'); break;
   }
@@ -580,6 +754,7 @@ document.addEventListener('input', (ev) => {
     ui[t.dataset.input] = t.value;
     if (t.dataset.input === 'orderQ') document.getElementById('olist').innerHTML = orderListHtml();
     if (t.dataset.input === 'custQ') document.getElementById('clist').innerHTML = custListHtml();
+    if (t.dataset.input === 'stockQ') document.getElementById('slist').innerHTML = stockListHtml();
     return;
   }
   if (t.id === 'of_cq') {
@@ -592,6 +767,8 @@ document.addEventListener('input', (ev) => {
 });
 document.addEventListener('change', (ev) => {
   const t = ev.target;
+  if (t.id === 'so_p' || t.id === 'so_loc') { updStockOp(); return; }
+  if (t.id === 'tk_loc') { go('#/stocktake?l=' + encodeURIComponent(t.value)); return; }
   if (t.id === 'of_c') onCustChange();
   else if (t.classList && t.classList.contains('l_p')) { setLinePrice(t.closest('.line-item')); updOrderForm(); }
   else if (t.id === 'of_plan') updOrderForm();
