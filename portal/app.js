@@ -371,6 +371,18 @@ function lineHtml(i, cur) {
     '<label style="font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:6px">数量<input class="l_q" type="number" step="any" inputmode="decimal"></label>' +
     '<label style="font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:6px">単価<span class="l_unit"></span><input class="l_u" type="number" step="any" inputmode="decimal"></label><button class="x" data-act="rmline" aria-label="削除">×</button></div>';
 }
+/* 取引先の絞り込み：iPhone は option の hidden が効かないため、候補を作り直す */
+function filterCustSelect(text) {
+  const q = text.trim().toLowerCase(); const sel = document.getElementById('of_c'); const prev = sel.value;
+  const cs = D.customers.slice().sort((a, b) => (a['取引先名'] || '').localeCompare(b['取引先名'] || '', 'ja'));
+  const hit = q ? cs.filter((c) => custLabel(c).toLowerCase().indexOf(q) >= 0) : cs;
+  sel.innerHTML = '<option value="">' + (q ? (hit.length ? '候補 ' + hit.length + '件' : '該当する取引先がありません') : '選んでください') + '</option><option value="__new">＋ 新しい取引先を登録</option>' +
+    hit.map((c) => '<option value="' + esc(c['取引先ID']) + '">' + esc(custLabel(c)) + '</option>').join('');
+  if (prev === '__new') sel.value = '__new';
+  else if (hit.some((c) => c['取引先ID'] === prev)) sel.value = prev;
+  else sel.value = q && hit.length ? hit[0]['取引先ID'] : '';
+  if (sel.value !== prev) onCustChange();
+}
 function isNewCust() { return document.getElementById('of_c').value === '__new'; }
 function formCust() {
   if (isNewCust()) return { '取引先名': val('nc_name'), '国': val('nc_country'), '通貨': val('nc_cur'), '支払サイト日数': val('nc_site') || 30 };
@@ -758,9 +770,7 @@ document.addEventListener('input', (ev) => {
     return;
   }
   if (t.id === 'of_cq') {
-    const q = t.value.trim().toLowerCase(); const sel = document.getElementById('of_c');
-    [...sel.options].forEach((o, i) => { if (i > 1) o.hidden = q && o.textContent.toLowerCase().indexOf(q) < 0; });
-    const vis = [...sel.options].filter((o, i) => i > 1 && !o.hidden); if (vis.length === 1) { sel.value = vis[0].value; onCustChange(); }
+    filterCustSelect(t.value);
     return;
   }
   if (t.closest && t.closest('#oform')) updOrderForm();
