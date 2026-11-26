@@ -159,7 +159,7 @@ function buildStock(d) {
   d.stock.forEach((g) => {
     const label = (g.p['商品名'] || '') + '（' + g.loc + '）';
     if (g.low) d.stockActs.push({ '作業': '発注の検討', '案件名': label, '期日': d.today, href: '#/stock-item/' + encodeURIComponent(g.pid) });
-    g.expiring.forEach((l) => d.stockActs.push({ '作業': '優先販売の検討', '案件名': label + (l.lot ? ' ' + l.lot : ''), '期日': addDays(l.exp, -90), href: '#/stock-item/' + encodeURIComponent(g.pid) }));
+    g.expiring.forEach((l) => { const dd = dayDiff(l.exp); d.stockActs.push({ '作業': '優先販売の検討', '案件名': label + (l.lot ? ' ' + l.lot : ''), '期日': addDays(l.exp, -90), href: '#/stock-item/' + encodeURIComponent(g.pid), label: dd < 0 ? '期限切れ' : '期限まで' + dd + '日', cls: dd <= 30 ? 'red' : 'amber', over: dd <= 30 }); });
   });
 }
 function unitOf(pid) { return (D.pMap[pid] || {})['単位'] || ''; }
@@ -248,7 +248,7 @@ function viewDash() {
   const acts = D.actions.concat(D.stockActs || []).sort((a, b) => (a['期日'] || '9').localeCompare(b['期日'] || '9'));
   const showN = ui.showAllActions ? acts.length : Math.min(acts.length, 10);
   const actRows = acts.slice(0, showN).map((a) => {
-    const dd = due(a['期日']);
+    const dd = a.label ? { cls: a.cls, label: a.label, over: a.over } : due(a['期日']);
     const href = a.href ? a.href : a['種類'] === '受注' ? '#/order/' + encodeURIComponent(a['参照ID']) : '#/task/' + encodeURIComponent(a['参照ID']);
     return '<a class="row' + (dd.over ? ' over' : '') + '" href="' + href + '"><span class="t">' + esc(a['作業']) + '</span><span class="c">' + esc(a['案件名']) + '</span><span class="pill ' + dd.cls + '">' + esc(dd.label) + '</span></a>';
   }).join('');
@@ -260,12 +260,19 @@ function viewDash() {
     '<div class="legend"><span><span class="sw"></span>売上</span><span class="ro">' + mlabel(ms[sel]) + '：' + man(vals[sel]) + '</span></div>' + chart + '</section>' +
     '<section class="card pad" style="display:flex;flex-direction:column;gap:8px;cursor:pointer" data-act="goorders" data-chip="unpaid"><div class="h2row"><h2>入金待ち</h2><b style="font-size:15px">' + yen(so + sn) + '</b></div>' + payBar +
     '<div class="h2row" style="font-size:12px"><span style="color:var(--red);font-weight:700">期日超過 ' + over.length + '件 ' + yen(so) + '</span><span class="muted">期日前 ' + notyet.length + '件 ' + yen(sn) + '</span></div></section>' +
+    stockWarnCard() +
     '<section style="display:flex;flex-direction:column;gap:8px"><div class="h2row"><p class="sec-title">ネクストアクション</p><span class="note">' + acts.length + '件・期日が近い順</span></div>' +
     '<div class="card list">' + (actRows || '<div class="empty">対応が必要な作業はありません</div>') +
     (acts.length > 10 ? '<button class="more" data-act="toggleacts">' + (ui.showAllActions ? '10件だけ表示' : 'すべて表示（' + acts.length + '件）') + '</button>' : '') + '</div></section>' +
     dashProjects() + '</main>';
 }
 
+function stockWarnCard() {
+  const low = D.stock.filter((g) => g.low).length; const exp = D.stock.reduce((n, g) => n + g.expiring.length, 0);
+  if (!low && !exp) return '';
+  return '<a class="card pad" href="#/stock" data-act="stockwarn" style="display:flex;justify-content:space-between;align-items:center;gap:8px;text-decoration:none;color:inherit;background:var(--amber-ll)"><b style="font-size:14px;color:#6B4500">在庫の確認</b><span style="font-size:13px;color:#6B4500">' +
+    (low ? '安全在庫割れ ' + low + '品目' : '') + (low && exp ? '・' : '') + (exp ? '賞味期限90日以内 ' + exp + 'ロット' : '') + ' ›</span></a>';
+}
 function dashProjects() {
   const list = sortedProjects().filter((x) => (x['状態'] || '進行中') === '進行中');
   if (!list.length) return '';
@@ -733,6 +740,7 @@ document.addEventListener('click', async (ev) => {
     case 'gopj': ev.preventDefault(); ui.salesTab = 'p'; go('#/sales'); break;
     case 'stab': ui.salesTab = el.dataset.v; render(); break;
     case 'sloc': ui.stockLoc = el.dataset.v; render(); break;
+    case 'stockwarn': ev.preventDefault(); ui.stockLoc = 'all'; go('#/stock'); break;
     case 'saveop': await saveStockOp(el.dataset.v); break;
     case 'savetake': await saveStocktake(); break;
     case 'savesafe': { const v = val('safe_' + el.dataset.loc); await write('saveSafety', { productId: id, location: el.dataset.loc, value: v }, '安全在庫を保存しました'); break; }
