@@ -217,16 +217,19 @@ main.view>*{flex-shrink:0}
 @media (min-width:1024px){
   html,body{background:var(--bg)}
   .shell{max-width:none;display:grid;grid-template-columns:220px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
-  .shell>.top{grid-column:2;grid-row:1;padding:18px 32px}
+  .shell>.top{grid-column:2;grid-row:1;height:88px;padding:0 32px;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:16px}
+  .top>.top-row{display:contents}
+  .top>.top-row>div:first-child{grid-column:1;grid-row:1}
+  .top .top-actions{grid-column:3;grid-row:1;justify-self:end}
+  .top>.seg{grid-column:2;grid-row:1;width:min(480px,46vw);margin-top:0}
   .shell>main.view{grid-column:2;grid-row:2;padding:24px 32px 40px}
   .shell>.login{grid-column:1 / span 2}
   nav.tabs{grid-column:1;grid-row:1 / span 2;flex-direction:column;justify-content:flex-start;gap:4px;border-top:0;border-right:1px solid var(--line2);padding:0 12px 16px}
-  nav.tabs .brand{display:flex;align-items:center;height:64px;margin:0 -12px 12px;padding:0 20px;background:var(--green-dd);color:#fff;font-weight:700;font-size:16px}
+  nav.tabs .brand{display:flex;align-items:center;height:88px;margin:0 -12px 12px;padding:0 20px;background:var(--green-dd);color:#fff;font-weight:700;font-size:16px}
   nav.tabs a{flex:none;flex-direction:row;gap:12px;padding:10px 12px;font-size:14px;border-radius:8px;color:var(--ink2)}
   nav.tabs a.on{background:var(--green-l);color:var(--green-d)}
   nav.tabs a:hover{background:#F1F0EA}
   nav.tabs svg{width:20px;height:20px}
-  .top .seg{max-width:560px}
   main.view>*{width:100%;max-width:760px;margin-left:auto;margin-right:auto}
   main.view.wide>*{max-width:1320px}
   main.view.wide>.narrow-btn{max-width:320px;margin-left:0}
