@@ -256,6 +256,12 @@ a.kpi[href]:hover{box-shadow:0 0 0 2px var(--green-ll) inset}
 .ship-r .c{font-size:13px}
 .ship-r .pill{font-size:11px}
 
+/* 発注の入荷（検品） */
+.recv{display:flex;flex-direction:column;gap:10px}
+.recv-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;padding:10px;border:1px solid var(--line);border-radius:10px;background:#FBFAF6}
+.recv-row>div:first-child{grid-column:1 / span 2}
+.recv-row>*{min-width:0}
+.recv-row label:first-of-type{grid-column:1 / span 2}
 @media (min-width:1024px){
   .kpis.six{grid-template-columns:repeat(6,minmax(0,1fr));gap:12px}
   .kpi.kpi-l{padding:14px 16px;gap:4px}

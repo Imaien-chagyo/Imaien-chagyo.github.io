@@ -8,8 +8,8 @@ const shell = document.getElementById('shell');
 const DEMO = !!window.DEMO_DATA;
 let D = null;            // サーバーから受け取ったデータ（加工済み）
 let token = localStorage.getItem('ip_token') || '';
-let ui = { stockLoc: 'all', stockQ: '', stockGroup: 'list', salesTab: 'w', orderChip: 'active', orderQ: '', orderView: 'list', openGroup: '', custChip: 'all', custQ: '', custBill: '', custView: 'list', showAllActions: false, sel: null, edit: false,
-  sort: { orders: { k: '', dir: 1 }, cust: { k: '', dir: 1 }, stock: { k: '', dir: 1 } } };
+let ui = { stockLoc: 'all', stockQ: '', stockGroup: 'list', salesTab: 'w', orderChip: 'active', orderQ: '', orderView: 'list', openGroup: '', custChip: 'all', custQ: '', custBill: '', custView: 'list', showAllActions: false, sel: null, edit: false, boTab: 'o', poChip: 'active', poQ: '',
+  sort: { orders: { k: '', dir: 1 }, cust: { k: '', dir: 1 }, stock: { k: '', dir: 1 }, po: { k: '', dir: 1 } } };
 const mqPC = window.matchMedia('(min-width: 1024px)');
 const isPC = () => mqPC.matches;
 mqPC.addEventListener && mqPC.addEventListener('change', () => { if (D) render(); });
@@ -144,7 +144,39 @@ function setData(raw) {
   d.projects = d.projects || []; d.pjMap = {}; d.projects.forEach((x) => { d.pjMap[x['プロジェクトID']] = x; });
   D = d;
   buildStock(d);
+  buildPurchases(d);
   render();
+}
+/* 発注：発注、入荷、支払 */
+function buildPurchases(d) {
+  d.purchases = d.purchases || []; d.purchaseLines = d.purchaseLines || [];
+  const byP = {}; d.purchaseLines.forEach((l) => { (byP[l['発注ID']] = byP[l['発注ID']] || []).push(l); });
+  d.poMap = {}; d.poActs = [];
+  d.purchases.forEach((x) => {
+    x.sup = d.supMap[x['仕入先']] || { '仕入先名': '（不明な仕入先）' };
+    x.lines = byP[x['発注ID']] || [];
+    x.total = x.lines.reduce((s, l) => s + num(l['数量']) * num(l['単価']), 0);
+    x.recv = x.lines.reduce((s, l) => s + num(l['入荷数量'] === '' ? l['数量'] : l['入荷数量']) * num(l['単価']), 0);
+    x.cancel = truthy(x['キャンセル']);
+    x.status = x.cancel ? 'cancel' : x['支払日'] ? 'done' : x['入荷日'] ? 'unpaid' : 'ordered';
+    x.step = { ordered: 1, unpaid: 2, done: 3, cancel: 0 }[x.status];
+    x.no = x['発注番号'] || '';
+    const f = x.lines[0];
+    x.summary = f ? ((d.pMap[f['商品']] || {})['商品名'] || f['商品']) + ' ' + qtyFmt(f['数量']) + ((d.pMap[f['商品']] || {})['単位'] || '') + (x.lines.length > 1 ? ' ほか' + (x.lines.length - 1) + '件' : '') : '明細なし';
+    const label = x.sup['仕入先名'] + ' ' + x.no;
+    x.act = null;
+    if (x.status === 'ordered') x.act = { '作業': '入荷確認', '案件名': label, '期日': x['入荷予定日'] || addDays(x['発注日'] || d.today, 7), href: '#/po/' + encodeURIComponent(x['発注ID']) };
+    if (x.status === 'unpaid') x.act = { '作業': '支払', '案件名': label, '期日': x['支払期日'] || x['入荷日'], href: '#/po/' + encodeURIComponent(x['発注ID']) };
+    if (x.act) d.poActs.push(x.act);
+    d.poMap[x['発注ID']] = x;
+  });
+  d.purchases.sort((a, b) => (b['発注日'] || '').localeCompare(a['発注日'] || '') || b.no.localeCompare(a.no));
+}
+/** 税込の見込み額：税率ごとに切り捨て */
+function poTaxIncl(x, received) {
+  const sub = { 8: 0, 10: 0 };
+  x.lines.forEach((l) => { const q = received && l['入荷数量'] !== '' ? num(l['入荷数量']) : num(l['数量']); const r = num((D.pMap[l['商品']] || {})['税率']) === 10 ? 10 : 8; sub[r] += q * num(l['単価']); });
+  return Math.round(sub[8] + sub[10] + Math.floor(sub[8] * 0.08) + Math.floor(sub[10] * 0.1));
 }
 function isStockItem(p) { return !!p && !(p['在庫管理'] === false || String(p['在庫管理']).toUpperCase() === 'FALSE'); }
 function r3(x) { return Math.round(x * 1000) / 1000; }
@@ -217,7 +249,7 @@ window.addEventListener('hashchange', () => { ui.edit = false; render(); const m
 
 function tabOf(p) {
   const k = p[0] || '';
-  if (/^(order|orders|new-order)$/.test(k)) return 'orders';
+  if (/^(order|orders|new-order|po|new-po)$/.test(k)) return 'orders';
   if (/^(sales|customer|customer-edit|project-edit)$/.test(k)) return 'sales';
   if (/^(stock|stock-item|stock-op|stocktake|products|product-edit|suppliers|supplier-edit)$/.test(k)) return 'stock';
   if (/^(input|task|task-edit)$/.test(k)) return 'input';
@@ -242,6 +274,8 @@ function render() {
   switch (p[0]) {
     case 'orders': html = viewOrders(); break;
     case 'order': html = viewOrder(decodeURIComponent(p[1] || '')); break;
+    case 'po': html = viewPO(decodeURIComponent(p[1] || '')); break;
+    case 'new-po': html = viewPOForm(r.q); break;
     case 'new-order': html = viewOrderForm(r.q.get('c') || ''); break;
     case 'sales': html = viewSales(); break;
     case 'customer': html = viewCustomer(decodeURIComponent(p[1] || '')); break;
@@ -262,6 +296,7 @@ function render() {
   }
   shell.innerHTML = html + nav(tabOf(p));
   if (p[0] === 'new-order') initOrderForm();
+  if (p[0] === 'new-po') updPOForm();
   if (p[0] === 'stock-op') updStockOp();
 }
 
@@ -342,7 +377,7 @@ function viewDashPC() {
   const later = ship.filter((o) => o['出荷予定日'] > nextSunday).length;
   const shipCard = '<section style="display:flex;flex-direction:column;gap:8px"><div class="h2row"><p class="sec-title">出荷の予定</p><span class="note">出荷待ち ' + ship.length + '件' + (later ? '（再来週以降 ' + later + '件）' : '') + '</span></div><div class="card list">' + (shipRows || '<div class="empty">今週と来週に出荷する受注はありません</div>') + '</div></section>';
 
-  const acts = D.actions.concat(D.stockActs || []).sort((a, b) => (a['期日'] || '9').localeCompare(b['期日'] || '9'));
+  const acts = D.actions.concat(D.stockActs || [], D.poActs || []).sort((a, b) => (a['期日'] || '9').localeCompare(b['期日'] || '9'));
   const showN = ui.showAllActions ? acts.length : Math.min(acts.length, 10);
   const actRows = acts.slice(0, showN).map((a) => {
     const dd = a.label ? { cls: a.cls, label: a.label, over: a.over } : due(a['期日']);
@@ -380,7 +415,7 @@ function viewDash() {
   const so = sum(over), sn = sum(notyet);
   const payBar = (so + sn) > 0 ? '<div class="pay-bar">' + (so ? '<div style="flex:' + so + '"></div>' : '') + (sn ? '<div style="flex:' + sn + '"></div>' : '') + '</div>' : '';
 
-  const acts = D.actions.concat(D.stockActs || []).sort((a, b) => (a['期日'] || '9').localeCompare(b['期日'] || '9'));
+  const acts = D.actions.concat(D.stockActs || [], D.poActs || []).sort((a, b) => (a['期日'] || '9').localeCompare(b['期日'] || '9'));
   const showN = ui.showAllActions ? acts.length : Math.min(acts.length, 10);
   const actRows = acts.slice(0, showN).map((a) => {
     const dd = a.label ? { cls: a.cls, label: a.label, over: a.over } : due(a['期日']);
@@ -478,12 +513,14 @@ function orderListHtml() {
       (open ? '<div class="grp-b">' + (isPC() ? tableHtml('orders', ORDER_COLS.filter((c) => c.k !== 'bill' && c.k !== 'cust' || ui.orderView === 'bill' && c.k === 'cust'), g.orders.map((o) => Object.assign(o, { _dim: o.cancel })), (o) => '#/order/' + encodeURIComponent(o['受注ID'])) : g.orders.map(orderCard).join('')) + '</div>' : '') + '</div>';
   }).join('');
 }
+function boSeg() { return '<div class="seg"><button class="' + (ui.boTab === 'o' ? 'on' : '') + '" data-act="botab" data-v="o">受注</button><button class="' + (ui.boTab === 'p' ? 'on' : '') + '" data-act="botab" data-v="p">発注</button></div>'; }
 function viewOrders() {
+  if (ui.boTab === 'p') return viewPurchases();
   const chip = ORDER_CHIPS.find((c) => c[0] === ui.orderChip) || ORDER_CHIPS[0];
   const chips = ORDER_CHIPS.map((c) => '<button class="chip' + (c[0] === chip[0] ? ' on' : '') + '" data-act="ochip" data-v="' + c[0] + '">' + c[1] + ' ' + D.orders.filter(c[2]).length + '</button>').join('');
   const views = [['list', '一覧'], ['cust', '取引先ごと'], ['bill', '帳合先ごと']];
   const seg = '<div class="seg light">' + views.map((v) => '<button class="' + (ui.orderView === v[0] ? 'on' : '') + '" data-act="oview" data-v="' + v[0] + '">' + v[1] + '</button>').join('') + '</div>';
-  return top('受発注ボード') + '<main class="view wide" style="gap:12px">' +
+  return top('受発注ボード', { extra: boSeg() }) + '<main class="view wide" style="gap:12px">' +
     '<div class="chips">' + chips + '</div><div class="toolbar"><input class="search" type="search" placeholder="取引先・受注番号・商品・請求番号で検索" value="' + esc(ui.orderQ) + '" data-input="orderQ">' + seg + '</div>' +
     '<div id="olist" style="display:flex;flex-direction:column;gap:12px">' + orderListHtml() + '</div>' +
     '<button class="btn primary narrow-btn" data-act="open" data-href="#/new-order">＋ 受注を登録</button></main>';
@@ -661,6 +698,135 @@ async function createOrder() {
     const n = D.orders.find((o) => !before.has(o['受注ID']));
     go(n ? '#/order/' + encodeURIComponent(n['受注ID']) : '#/orders');
   }
+}
+
+/* ================= 発注 ================= */
+const PO_STEPS = ['発注', '入荷', '支払'];
+const PO_STATUS = { ordered: '入荷待ち', unpaid: '支払待ち', done: '完了', cancel: 'キャンセル' };
+const PO_CHIPS = [['active', '進行中', (x) => x.status === 'ordered' || x.status === 'unpaid'], ['ordered', '入荷待ち', (x) => x.status === 'ordered'], ['unpaid', '支払待ち', (x) => x.status === 'unpaid'], ['done', '完了', (x) => x.status === 'done'], ['all', 'すべて', () => true], ['cancel', 'キャンセル', (x) => x.cancel]];
+function poSteps(x) {
+  if (x.cancel) return '<div class="pill" style="align-self:flex-start">キャンセル</div>';
+  return '<div class="steps" style="grid-template-columns:repeat(3,minmax(0,1fr))">' + PO_STEPS.map((l, i) => '<div class="' + (i < x.step ? 'done' : i === x.step ? 'cur' : '') + '"><i></i><span>' + l + '</span></div>').join('') + '</div>';
+}
+function poNext(x) {
+  if (!x.act) return '';
+  const dd = due(x.act['期日']);
+  return '<div class="nextline"><span class="muted">次の作業</span><span class="due-' + ({ red: 'red', amber: 'amber' }[dd.cls] || 'normal') + '">' + esc(dd.label) + '</span><span>' + esc(x.act['作業']) + '</span></div>';
+}
+function poCard(x) {
+  return '<div class="ocard' + (x.cancel ? ' cancelled' : '') + '" data-act="open" data-href="#/po/' + encodeURIComponent(x['発注ID']) + '">' +
+    '<div class="l1"><b>' + esc(x.sup['仕入先名']) + '</b><span class="note" style="flex:none">' + esc(x.no) + '・' + md(x['発注日']) + '</span></div>' +
+    '<div class="l2"><span>' + esc(x.summary) + '</span><b>' + yen(x.total) + '</b></div>' + poSteps(x) + poNext(x) + '</div>';
+}
+const PO_COLS = [
+  { k: 'no', label: '発注番号', val: (x) => x.no },
+  { k: 'date', label: '発注日', val: (x) => x['発注日'] || '', html: (x) => ymd(x['発注日']) },
+  { k: 'sup', label: '仕入先', val: (x) => x.sup['仕入先名'], html: (x) => '<b>' + esc(x.sup['仕入先名']) + '</b>' },
+  { k: 'sum', label: '内容', val: (x) => x.summary },
+  { k: 'amt', label: '金額（税抜）', r: true, val: (x) => x.total, html: (x) => yen(x.total) },
+  { k: 'st', label: '状態', val: (x) => x.step, html: (x) => '<span class="pill ' + ({ ordered: '', unpaid: 'amber', done: 'green' }[x.status] || '') + '">' + PO_STATUS[x.status] + '</span>' },
+  { k: 'loc', label: '入荷先', val: (x) => x['入荷先'] || '' },
+  { k: 'arr', label: '入荷予定・入荷日', val: (x) => x['入荷日'] || x['入荷予定日'] || '', html: (x) => (x['入荷日'] ? '入荷 ' + ymd(x['入荷日']) : x['入荷予定日'] ? '予定 ' + ymd(x['入荷予定日']) : '—') },
+  { k: 'next', label: '次の作業', val: (x) => (x.act ? x.act['期日'] : '9'), html: (x) => { if (!x.act) return ''; const dd = due(x.act['期日']); return esc(x.act['作業']) + ' <span class="due-' + ({ red: 'red', amber: 'amber' }[dd.cls] || 'normal') + '">' + esc(dd.label) + '</span>'; } }
+];
+function poListHtml() {
+  const chip = PO_CHIPS.find((c) => c[0] === ui.poChip) || PO_CHIPS[0];
+  const q = ui.poQ.trim().toLowerCase();
+  let list = D.purchases.filter(chip[2]);
+  if (q) list = list.filter((x) => (x.sup['仕入先名'] + ' ' + x.no + ' ' + x.summary).toLowerCase().indexOf(q) >= 0);
+  if (chip[0] === 'active' || chip[0] === 'ordered' || chip[0] === 'unpaid') list.sort((a, b) => ((a.act || {})['期日'] || '9').localeCompare((b.act || {})['期日'] || '9'));
+  if (isPC()) return tableHtml('po', PO_COLS, list.map((x) => Object.assign(x, { _dim: x.cancel })), (x) => '#/po/' + encodeURIComponent(x['発注ID']));
+  return list.map(poCard).join('') || '<div class="empty">該当する発注はありません</div>';
+}
+function viewPurchases() {
+  const chip = PO_CHIPS.find((c) => c[0] === ui.poChip) || PO_CHIPS[0];
+  const chips = PO_CHIPS.map((c) => '<button class="chip' + (c[0] === chip[0] ? ' on' : '') + '" data-act="pochip" data-v="' + c[0] + '">' + c[1] + ' ' + D.purchases.filter(c[2]).length + '</button>').join('');
+  return top('受発注ボード', { extra: boSeg() }) + '<main class="view wide" style="gap:12px">' +
+    '<div class="chips">' + chips + '</div><div class="toolbar"><input class="search" type="search" placeholder="仕入先・発注番号・商品で検索" value="' + esc(ui.poQ) + '" data-input="poQ"></div>' +
+    '<div id="plist" style="display:flex;flex-direction:column;gap:12px">' + poListHtml() + '</div>' +
+    '<button class="btn primary narrow-btn" data-act="open" data-href="#/new-po">＋ 発注を登録</button></main>';
+}
+function viewPO(id) {
+  const x = D.poMap[id];
+  if (!x) return top('発注', { back: true }) + '<main class="view"><div class="empty">発注が見つかりません</div></main>';
+  const t = todayStr(); const locOpts = (v) => CONFIG.LOCATIONS.map((l) => '<option' + (l === v ? ' selected' : '') + '>' + l + '</option>').join('');
+  let actionHtml = '';
+  if (!x.cancel && x.status === 'ordered') {
+    const rows = x.lines.map((l) => { const p = D.pMap[l['商品']] || {}; const st = isStockItem(p);
+      return '<div class="recv-row" data-line="' + esc(l['明細ID']) + '"><div><b>' + esc(p['商品名'] || l['商品']) + '</b><div class="note">発注 ' + qtyFmt(l['数量']) + esc(p['単位'] || '') + (st ? '' : '・在庫管理しない商品') + '</div></div>' +
+        '<label>入荷数量<input class="r_q" type="number" step="any" inputmode="decimal" value="' + num(l['数量']) + '"></label>' +
+        (st ? '<label>ロット（任意）<input class="r_lot" placeholder="例：2612-A"></label><label>賞味期限（任意）<input class="r_exp" type="date"></label>' : '<span></span><span></span>') + '</div>'; }).join('');
+    actionHtml = '<div class="inline-form form"><b style="font-size:14px">入荷を記録（検品）</b><div class="two"><label>入荷日<input type="date" id="f_date" value="' + t + '"></label><label>入荷先<select id="f_loc">' + locOpts(x['入荷先'] || CONFIG.LOCATIONS[0]) + '</select></label></div>' +
+      '<div class="note">届いた数量を数え、発注と違うときは入荷数量を書き換えてください。在庫管理する商品は、入荷先の在庫に仕入単価つきで入庫します。支払期日は入荷日の翌月末になります（あとで変更できます）。</div>' +
+      '<div class="recv">' + rows + '</div><button class="btn primary" data-act="poreceive" data-id="' + esc(id) + '">入荷を記録する</button></div>';
+  }
+  if (!x.cancel && x.status === 'unpaid') actionHtml = '<div class="inline-form form"><b style="font-size:14px">支払を記録</b><div class="two"><label>支払日<input type="date" id="f_date" value="' + t + '"></label><label>支払額（円、税込）<input type="number" step="any" inputmode="decimal" id="f_amount" value="' + poTaxIncl(x, true) + '"></label></div>' +
+    '<div class="note">支払額の初期値は、入荷数量×仕入単価に消費税（税率ごとに切り捨て）を足した見込み額です。請求書の金額に合わせて直してください。' + (x.sup['支払条件'] ? '仕入先の支払条件：' + esc(x.sup['支払条件']) : '') + '</div>' +
+    '<button class="btn primary" data-act="popay" data-id="' + esc(id) + '">支払を記録する</button></div>';
+  const recvd = !!x['入荷日'];
+  const lines = x.lines.map((l) => { const p = D.pMap[l['商品']] || {}; const u = p['単位'] || '';
+    const rq = recvd && l['入荷数量'] !== '' ? num(l['入荷数量']) : null;
+    return '<tr><td>' + esc(p['商品名'] || l['商品']) + (recvd ? '<div class="note">入荷 ' + qtyFmt(rq) + u + (rq !== num(l['数量']) ? '（発注と差あり）' : '') + (l['ロット'] ? '・ロット ' + esc(l['ロット']) : '') + (l['賞味期限'] ? '・賞味期限 ' + ymd(l['賞味期限']) : '') + '</div>' : '') + '</td><td class="r">' + qtyFmt(l['数量']) + esc(u) + ' × ' + yen(l['単価']) + '</td><td class="r">' + yen(num(l['数量']) * num(l['単価'])) + '</td></tr>'; }).join('');
+  const undo = { unpaid: 'receive', done: 'payment' }[x.status];
+  const kv = [['仕入先', '<a href="#/supplier-edit/' + encodeURIComponent(x['仕入先']) + '">' + esc(x.sup['仕入先名']) + '</a>'], ['発注日', ymd(x['発注日'])], ['入荷先', esc(x['入荷先'] || '—')], ['入荷予定日', ymd(x['入荷予定日'])], ['入荷日', ymd(x['入荷日'])], ['支払期日', ymd(x['支払期日'])], ['支払日', ymd(x['支払日'])], ['支払額', x['支払額'] !== '' && x['支払額'] != null ? yen(x['支払額']) : '—'], ['登録者', esc(x['登録者'] || '—')]];
+  const editForm = ui.edit ? '<section class="card pad form"><b style="font-size:14px">内容を編集</b><div class="two"><label>入荷予定日<input type="date" id="e_plan" value="' + esc(x['入荷予定日']) + '"></label><label>入荷先<select id="e_loc">' + locOpts(x['入荷先']) + '</select></label></div>' +
+    '<label>支払期日<input type="date" id="e_due" value="' + esc(x['支払期日']) + '"></label><label>メモ<textarea id="e_memo">' + esc(x['メモ']) + '</textarea></label>' +
+    '<div class="btns"><button class="btn ghost" data-act="editoff">やめる</button><button class="btn primary" data-act="savepo" data-id="' + esc(id) + '">保存する</button></div></section>' : '';
+  return top(x.no + '　' + x.sup['仕入先名'], { back: true }) + '<main class="view" style="gap:12px">' +
+    '<section class="card pad" style="display:flex;flex-direction:column;gap:10px"><div class="h2row"><b>' + esc(x.sup['仕入先名']) + '</b><b style="font-size:17px">' + yen(x.total) + '<span class="note">（税抜）</span></b></div>' + poSteps(x) + poNext(x) + '</section>' +
+    (actionHtml ? '<section class="card">' + actionHtml + '</section>' : '') + editForm +
+    '<section class="card"><table class="lines">' + lines + '<tr class="total"><td>合計（税抜）</td><td></td><td class="r">' + yen(x.total) + '</td></tr><tr><td class="note">税込の見込み</td><td></td><td class="r note">' + yen(poTaxIncl(x, recvd)) + '</td></tr></table></section>' +
+    '<section class="card kv">' + kv.map((r) => '<div><span>' + r[0] + '</span><span>' + r[1] + '</span></div>').join('') + '</section>' +
+    (x['メモ'] ? '<section class="card memo">' + esc(x['メモ']) + '</section>' : '') +
+    '<div class="btns">' + (ui.edit ? '' : '<button class="btn ghost" data-act="editon">内容を編集</button>') + (undo && !x.cancel ? '<button class="btn ghost" data-act="poundo" data-id="' + esc(id) + '" data-step="' + undo + '">直前の工程を取り消す</button>' : '') +
+    (x.status === 'ordered' || x.cancel ? '<button class="btn danger" data-act="pocancel" data-id="' + esc(id) + '" data-v="' + (x.cancel ? '0' : '1') + '">' + (x.cancel ? 'キャンセルを取り消す' : 'キャンセルにする') + '</button>' : '') +
+    '<button class="btn danger" data-act="delpo" data-id="' + esc(id) + '">発注を削除</button></div></main>';
+}
+/* ---------- 発注フォーム ---------- */
+function poLineHtml(pid) {
+  const ps = D.products.filter((p) => truthy(p['販売中']) || p['販売中'] === '' || isStockItem(p)).sort((a, b) => (a['商品名'] || '').localeCompare(b['商品名'] || '', 'ja'));
+  return '<div class="line-item po-line"><label style="font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:6px">商品<select class="pl_p"><option value="">選択</option>' + ps.map((p) => '<option value="' + esc(p['商品ID']) + '"' + (p['商品ID'] === pid ? ' selected' : '') + '>' + esc(p['商品名']) + '</option>').join('') + '</select></label>' +
+    '<label style="font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:6px">数量<input class="pl_q" type="number" step="any" inputmode="decimal"></label>' +
+    '<label style="font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:6px">仕入単価<input class="pl_u" type="number" step="any" inputmode="decimal"' + (pid && costOf(D.pMap[pid]) != null ? ' value="' + costOf(D.pMap[pid]) + '"' : '') + '></label><button class="x" data-act="rmpoline" aria-label="削除">×</button></div>';
+}
+function viewPOForm(q) {
+  const pid = q.get('p') || ''; const sid = q.get('s') || (pid && D.pMap[pid] ? D.pMap[pid]['仕入先'] : '') || '';
+  const sups = D.suppliers.slice().sort((a, b) => (a['仕入先名'] || '').localeCompare(b['仕入先名'] || '', 'ja'));
+  const loc = q.get('l') || (ui.stockLoc !== 'all' ? ui.stockLoc : CONFIG.LOCATIONS[0]);
+  return top('発注を登録', { back: true }) + '<main class="view" style="gap:12px"><section class="card pad form" id="poform">' +
+    '<label>仕入先<select id="po_s"><option value="">選んでください</option>' + sups.map((x) => '<option value="' + esc(x['仕入先ID']) + '"' + (x['仕入先ID'] === sid ? ' selected' : '') + '>' + esc(x['仕入先名']) + '</option>').join('') + '</select></label>' +
+    '<div id="po_lines" style="display:flex;flex-direction:column;gap:10px">' + poLineHtml(pid) + '</div><button class="btn ghost" data-act="addpoline" style="min-height:40px">＋ 商品を追加</button>' +
+    '<div class="sumbox"><span class="note">合計（税抜）</span><b id="po_total">¥0</b></div>' +
+    '<div class="two"><label>入荷予定日<input type="date" id="po_plan" value="' + addDays(todayStr(), 7) + '"></label><label>入荷先<select id="po_loc">' + CONFIG.LOCATIONS.map((l) => '<option' + (l === loc ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></label></div>' +
+    '<label>メモ（任意）<textarea id="po_memo" placeholder="発注の方法（電話、メール）、条件など"></textarea></label></section>' +
+    '<div class="infobox" id="po_info"></div><button class="btn primary" data-act="createpo">登録する</button></main>';
+}
+function updPOForm() {
+  const f = document.getElementById('poform'); if (!f) return;
+  const sid = val('po_s'); let total = 0;
+  document.querySelectorAll('#po_lines .po-line').forEach((el) => {
+    const p = D.pMap[el.querySelector('.pl_p').value];
+    el.querySelector('.pl_q').placeholder = p ? (p['単位'] || '') : '';
+    total += num(el.querySelector('.pl_q').value) * num(el.querySelector('.pl_u').value);
+  });
+  document.getElementById('po_total').textContent = yen(total);
+  const sp = D.products.filter((p) => sid && p['仕入先'] === sid).map((p) => p['商品名']);
+  const plan = val('po_plan');
+  document.getElementById('po_info').innerHTML = '<b>登録するとネクストアクションに表示されます</b><span>入荷確認　期日 ' + (plan ? md(plan) : '—') + '</span>' + (sid ? '<span class="note">この仕入先の商品：' + (sp.length ? esc(sp.join('、')) : '商品マスタで未設定') + '</span>' : '');
+}
+async function createPO() {
+  const lines = [...document.querySelectorAll('#po_lines .po-line')].map((el) => ({ productId: el.querySelector('.pl_p').value, qty: el.querySelector('.pl_q').value, price: el.querySelector('.pl_u').value }));
+  const payload = { supplierId: val('po_s'), location: val('po_loc'), planned: val('po_plan'), memo: val('po_memo'), lines };
+  if (!payload.supplierId) { alert('仕入先を選んでください'); return; }
+  if (!lines.some((l) => l.productId && num(l.qty) > 0)) { alert('商品と数量を入力してください'); return; }
+  const before = new Set(D.purchases.map((x) => x['発注ID']));
+  if (await write('createPurchase', payload, '発注を登録しました')) { const n = D.purchases.find((x) => !before.has(x['発注ID'])); ui.boTab = 'p'; go(n ? '#/po/' + encodeURIComponent(n['発注ID']) : '#/orders'); }
+}
+async function receivePO(id) {
+  const lines = [...document.querySelectorAll('.recv-row')].map((r) => ({ lineId: r.dataset.line, qty: r.querySelector('.r_q').value, lot: r.querySelector('.r_lot') ? r.querySelector('.r_lot').value.trim() : '', expiry: r.querySelector('.r_exp') ? r.querySelector('.r_exp').value : '' }));
+  const x = D.poMap[id]; const diff = lines.filter((l) => { const o = x.lines.find((y) => y['明細ID'] === l.lineId); return o && num(l.qty) !== num(o['数量']); });
+  if (diff.length && !confirm(diff.length + '件の商品で、入荷数量が発注数量と違います。このまま記録しますか')) return;
+  await write('receivePurchase', { id, date: val('f_date'), location: val('f_loc'), lines }, '入荷を記録し、在庫に入庫しました');
 }
 
 /* ================= 営業（取引先） ================= */
@@ -880,7 +1046,7 @@ function viewStockItem(pid) {
   return top(p['商品名'], { back: true }) + '<main class="view" style="gap:12px">' +
     '<section class="kpis"><div class="kpi"><span>全拠点の合計</span><b>' + qtyFmt(total) + ' ' + esc(u) + '</b></div><div class="kpi"><span>在庫金額</span><b>' + yen(D.stock.filter((g) => g.pid === pid).reduce((s, g) => s + g.value, 0)) + '</b></div><div class="kpi"><span>標準の仕入単価</span><b>' + (costOf(p) != null ? yen(costOf(p)) : '未設定') + '</b></div></section>' +
     '<div class="note">仕入先：' + (supName(p['仕入先']) ? '<a href="#/supplier-edit/' + encodeURIComponent(p['仕入先']) + '">' + esc(supName(p['仕入先'])) + '</a>' : '未設定') + '。入庫のときに入れた単価はロットごとに記録し、在庫金額はその単価で計算します（単価がないロットは標準の仕入単価で計算）。</div>' +
-    '<div class="tiles"><button class="tile" data-act="open" data-href="#/stock-op/in' + q + '">入庫</button><button class="tile" data-act="open" data-href="#/stock-op/out' + q + '">出庫</button><button class="tile" data-act="open" data-href="#/stock-op/move' + q + '">在庫移動</button><button class="tile" data-act="open" data-href="#/product-edit/' + encodeURIComponent(pid) + '">商品の情報</button></div>' +
+    '<div class="tiles"><button class="tile" data-act="open" data-href="#/stock-op/in' + q + '">入庫</button><button class="tile" data-act="open" data-href="#/stock-op/out' + q + '">出庫</button><button class="tile" data-act="open" data-href="#/stock-op/move' + q + '">在庫移動</button><button class="tile" data-act="open" data-href="#/product-edit/' + encodeURIComponent(pid) + '">商品の情報</button><button class="tile" data-act="open" data-href="#/new-po?p=' + encodeURIComponent(pid) + '">この商品を発注</button></div>' +
     locCards + '<p class="sec-title">入出庫の記録</p><div class="card">' + (histRows || '<div class="empty">記録はありません</div>') + '</div>' +
     '<div class="note">間違えて登録した記録は × で削除できます。在庫移動は、移動元と移動先の両方の記録が消えます。</div></main>';
 }
@@ -991,7 +1157,7 @@ function viewSupplierForm(id) {
   const ps = D.products.filter((p) => p['仕入先'] === id);
   return top(id === 'new' ? '仕入先を追加' : '仕入先を編集', { back: true }) + '<main class="view" style="gap:12px"><section class="card pad form" id="supform">' + f('仕入先名', '仕入先名') + f('担当者名', '担当者') +
     '<div class="two">' + f('電話', '電話', 'tel') + f('メール', 'メール', 'email') + '</div>' + f('住所', '住所') + f('支払条件', '支払条件（例：月末締め翌月末払い）') +
-    '<label>メモ<textarea data-f="メモ">' + esc(x['メモ']) + '</textarea></label></section><button class="btn primary" data-act="savesup" data-id="' + esc(id) + '">保存する</button>' +
+    '<label>メモ<textarea data-f="メモ">' + esc(x['メモ']) + '</textarea></label></section><button class="btn primary" data-act="savesup" data-id="' + esc(id) + '">保存する</button>' + (id !== 'new' ? '<button class="btn" data-act="open" data-href="#/new-po?s=' + encodeURIComponent(id) + '">この仕入先に発注する</button>' : '') +
     (id !== 'new' ? '<p class="sec-title">この仕入先の商品（' + ps.length + '件）</p><div class="card list">' + (ps.map((p) => '<a class="row" href="#/product-edit/' + encodeURIComponent(p['商品ID']) + '"><span class="c" style="color:var(--ink)">' + esc(p['商品名']) + '</span><span class="note" style="flex:none">' + (costOf(p) != null ? '仕入 ' + yen(costOf(p)) : '仕入単価未設定') + '</span></a>').join('') || '<div class="empty">まだありません</div>') + '</div>' +
       (ps.length ? '<div class="note">商品がある仕入先は削除できません。</div>' : '<button class="btn danger" data-act="delsup" data-id="' + esc(id) + '">この仕入先を削除</button>') : '') + '</main>';
 }
@@ -1007,6 +1173,10 @@ function viewInput() {
     '<button class="tile" data-act="goorders" data-chip="unshipped">出荷を記録<small>出荷待ち ' + cnt('unshipped') + '件</small></button>' +
     '<button class="tile" data-act="goorders" data-chip="uninvoiced">請求を記録<small>請求待ち ' + cnt('uninvoiced') + '件</small></button>' +
     '<button class="tile" data-act="goorders" data-chip="unpaid">入金を記録<small>入金待ち ' + cnt('unpaid') + '件</small></button></div></section>' +
+    '<section style="display:flex;flex-direction:column;gap:8px"><p class="note" style="margin:0">発注（仕入）</p><div class="tiles">' +
+    '<button class="tile" data-act="open" data-href="#/new-po">発注を登録</button>' +
+    '<button class="tile" data-act="gopo" data-chip="ordered">入荷を記録<small>入荷待ち ' + D.purchases.filter((x) => x.status === 'ordered').length + '件</small></button>' +
+    '<button class="tile" data-act="gopo" data-chip="unpaid">支払を記録<small>支払待ち ' + D.purchases.filter((x) => x.status === 'unpaid').length + '件</small></button></div></section>' +
     '<section style="display:flex;flex-direction:column;gap:8px"><p class="note" style="margin:0">営業</p><div class="tiles">' +
     '<button class="tile" data-act="open" data-href="#/customer-edit/new?phase=' + encodeURIComponent('パイプライン') + '">リードを追加<small>営業先の候補</small></button>' +
     '<button class="tile" data-act="open" data-href="#/project-edit/new">プロジェクトを追加<small>進行中 ' + D.projects.filter((x) => (x['状態'] || '進行中') === '進行中').length + '件</small></button></div></section>' +
@@ -1049,7 +1219,8 @@ document.addEventListener('click', async (ev) => {
     case 'selmonth': ui.sel = +el.dataset.i; render(); break;
     case 'fymonth': ui.fySel = el.dataset.k; render(); break;
     case 'toggleacts': ui.showAllActions = !ui.showAllActions; render(); break;
-    case 'goorders': ui.orderChip = el.dataset.chip; ui.orderQ = ''; go('#/orders'); break;
+    case 'goorders': ui.orderChip = el.dataset.chip; ui.orderQ = ''; ui.boTab = 'o'; go('#/orders'); break;
+    case 'gopo': ui.poChip = el.dataset.chip; ui.poQ = ''; ui.boTab = 'p'; go('#/orders'); break;
     case 'ochip': ui.orderChip = el.dataset.v; render(); break;
     case 'cchip': ui.custChip = el.dataset.v; render(); break;
     case 'gopj': ev.preventDefault(); ui.salesTab = 'p'; go('#/sales'); break;
@@ -1074,6 +1245,17 @@ document.addEventListener('click', async (ev) => {
     case 'invmail': await draftInvoiceMail(id); break;
     case 'cview': ui.custView = el.dataset.v; render(); break;
     case 'sgroup': ui.stockGroup = el.dataset.v; render(); break;
+    case 'botab': ui.boTab = el.dataset.v; ui.edit = false; render(); break;
+    case 'pochip': ui.poChip = el.dataset.v; render(); break;
+    case 'addpoline': { const w = document.getElementById('po_lines'); w.insertAdjacentHTML('beforeend', poLineHtml('')); updPOForm(); break; }
+    case 'rmpoline': { const w = document.getElementById('po_lines'); if (w.children.length > 1) el.closest('.po-line').remove(); updPOForm(); break; }
+    case 'createpo': await createPO(); break;
+    case 'poreceive': await receivePO(id); break;
+    case 'popay': await write('payPurchase', { id, date: val('f_date'), amount: val('f_amount') }, '支払を記録しました'); break;
+    case 'poundo': if (confirm(el.dataset.step === 'receive' ? '入荷の記録を取り消しますか。入荷で追加した在庫の記録も消えます' : '支払の記録を取り消しますか')) await write('undoPurchase', { id, step: el.dataset.step }, '取り消しました'); break;
+    case 'pocancel': if (confirm(el.dataset.v === '1' ? 'この発注をキャンセルにしますか' : 'キャンセルを取り消しますか')) await write('updatePurchase', { id, fields: { 'キャンセル': el.dataset.v === '1' } }, '更新しました'); break;
+    case 'delpo': if (confirm('この発注を削除しますか。明細と、入荷で追加した在庫の記録も消えます。元に戻せません')) { if (await write('deletePurchase', { id }, '発注を削除しました')) { ui.boTab = 'p'; go('#/orders'); } } break;
+    case 'savepo': if (await write('updatePurchase', { id, fields: { '入荷予定日': val('e_plan'), '入荷先': val('e_loc'), '支払期日': val('e_due'), 'メモ': val('e_memo') } }, '保存しました')) { ui.edit = false; render(); } break;
     case 'oview': ui.orderView = el.dataset.v; ui.openGroup = ''; render(); break;
     case 'ogroup': ui.openGroup = ui.openGroup === el.dataset.v ? '' : el.dataset.v; document.getElementById('olist').innerHTML = orderListHtml(); break;
     case 'sort': { const st = ui.sort[el.dataset.t]; if (st.k === el.dataset.k) st.dir = -st.dir; else { st.k = el.dataset.k; st.dir = 1; } render(); break; }
@@ -1109,6 +1291,7 @@ document.addEventListener('input', (ev) => {
     ui[t.dataset.input] = t.value;
     if (t.dataset.input === 'orderQ') document.getElementById('olist').innerHTML = orderListHtml();
     if (t.dataset.input === 'custQ') document.getElementById('clist').innerHTML = custListHtml();
+    if (t.dataset.input === 'poQ') document.getElementById('plist').innerHTML = poListHtml();
     if (t.dataset.input === 'stockQ') document.getElementById('slist').innerHTML = stockListHtml();
     return;
   }
@@ -1117,11 +1300,14 @@ document.addEventListener('input', (ev) => {
     return;
   }
   if (t.closest && t.closest('#oform')) updOrderForm();
+  if (t.closest && t.closest('#poform')) updPOForm();
 });
 document.addEventListener('change', (ev) => {
   const t = ev.target;
   if (t.id === 'so_cost') { t.dataset.auto = '0'; return; }
   if (t.id === 'so_p' || t.id === 'so_loc') { updStockOp(); return; }
+  if (t.classList && t.classList.contains('pl_p')) { const p = D.pMap[t.value]; const u = t.closest('.po-line').querySelector('.pl_u'); if (p && costOf(p) != null) u.value = costOf(p); updPOForm(); return; }
+  if (t.id === 'po_s' || t.id === 'po_plan') { updPOForm(); return; }
   if (t.id === 'cust_bill') { ui.custBill = t.value; document.getElementById('clist').innerHTML = custListHtml(); return; }
   if (t.id === 'tk_loc') { go('#/stocktake?l=' + encodeURIComponent(t.value)); return; }
   if (t.id === 'of_c') onCustChange();
