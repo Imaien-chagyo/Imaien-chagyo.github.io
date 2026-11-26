@@ -382,7 +382,7 @@ function viewDash() {
 
   return top('今井園ポータル', { sub: jpDate(todayStr()), logout: true }) +
     '<main class="view wide">' +
-    '<section class="kpis"><div class="kpi"><span>' + mlabel(cur) + 'の売上</span><b>' + man(vals[5]) + '</b></div><div class="kpi"><span>' + mlabel(ms[4]) + 'の売上</span><b>' + man(vals[4]) + '</b></div><div class="kpi" title="' + esc(fyLabel()) + '"><span>今年度の累計（2月〜）</span><b>' + man(fyTotal) + '</b></div></section>' +
+    '<section class="kpis"><div class="kpi"><span>' + mlabel(cur) + 'の売上</span><b>' + man(vals[5]) + '</b></div><div class="kpi"><span>' + mlabel(ms[4]) + 'の売上</span><b>' + man(vals[4]) + '</b></div><div class="kpi" title="' + esc(fyLabel()) + '"><span>今年度の累計</span><b>' + man(fyTotal) + '</b></div></section>' +
     '<div class="dcols"><div class="dcol">' +
     '<section class="card pad" style="display:flex;flex-direction:column;gap:10px"><div class="h2row"><h2>月別の売上</h2><span class="note">万円・請求ベース</span></div>' +
     '<div class="legend"><span><span class="sw"></span>売上</span><span class="ro">' + mlabel(ms[sel]) + '：' + man(vals[sel]) + '</span></div>' + chart + '</section>' +
