@@ -178,6 +178,14 @@ function buildStock(d) {
   });
 }
 function costOf(p) { const v = p ? p['仕入単価'] : ''; return v === '' || v == null || isNaN(parseFloat(v)) ? null : num(v); }
+/* 支払条件：帳合先があれば帳合先の条件。標準は請求日の翌月末払い。「日数指定」は請求日から支払サイト日数後 */
+function payOf(c) { const b = (c && c.bill) || c || {}; return String(b['支払条件'] || '') === '日数指定' ? { days: num(b['支払サイト日数']) || 30 } : { eom: true }; }
+function payLabel(c) { const t = payOf(c); return t.eom ? '翌月末払い' : '請求日から' + t.days + '日後'; }
+function dueFrom(dateStr, c) { const t = payOf(c); if (!dateStr) return ''; if (!t.eom) return addDays(dateStr, t.days); const a = dateStr.split('-'); return isoDate(new Date(+a[0], +a[1] + 1, 0)); }
+function payFields(cur, days, prefix) {
+  return '<div class="two"><label>支払条件<select ' + prefix + '="支払条件" id="' + (prefix === 'data-f' ? 'cf_pay' : 'nc_pay') + '"><option value=""' + (cur !== '日数指定' ? ' selected' : '') + '>翌月末払い（請求日の翌月末）</option><option value="日数指定"' + (cur === '日数指定' ? ' selected' : '') + '>請求日から日数で決める</option></select></label>' +
+    '<label>日数（日数で決める場合）<input ' + prefix + '="支払サイト日数" id="' + (prefix === 'data-f' ? 'cf_days' : 'nc_site') + '" type="number" inputmode="numeric" value="' + esc(days || 30) + '"' + (cur === '日数指定' ? '' : ' disabled') + '></label></div>';
+}
 function supName(id) { const x = D && D.supMap[id]; return x ? x['仕入先名'] : ''; }
 function unitOf(pid) { return (D.pMap[pid] || {})['単位'] || ''; }
 function custLabel(c) { return (c['取引先名'] || '') + (c['国'] && c['国'] !== 'JP' ? '（' + c['国'] + '）' : ''); }
@@ -489,9 +497,8 @@ function viewOrder(id) {
   if (!o.cancel) {
     if (o.status === 'unshipped') actionHtml = '<div class="inline-form form"><b style="font-size:14px">出荷を記録</b><div class="two"><label>出荷日<input type="date" id="f_date" value="' + t + '"></label><label>追跡番号（任意）<input id="f_track" value="' + esc(o['追跡番号']) + '"></label></div>' + shipStockNote(o) + '<button class="btn primary" data-act="ship" data-id="' + esc(id) + '">出荷を記録する</button></div>';
     if (o.status === 'uninvoiced') {
-      const site = num(o.c['支払サイト日数']) || 30;
       actionHtml = '<div class="inline-form form"><b style="font-size:14px">請求を記録</b><label>請求日<input type="date" id="f_date" value="' + t + '"></label>' +
-        '<div class="note">請求書PDFを' + esc(o.billTo['取引先名']) + ' 宛て（' + (overseas ? '英語' : '日本語') + '）で作り、Googleドライブに保存します。支払期日は請求日の' + site + '日後になります。' + (cur === 'EUR' ? '為替レートは請求日時点のEUR/JPYを自動で記録します。' : '') + '</div>' +
+        '<div class="note">請求書PDFを' + esc(o.billTo['取引先名']) + ' 宛て（' + (overseas ? '英語' : '日本語') + '）で作り、Googleドライブに保存します。支払条件は' + esc(payLabel(o.c)) + (o.c.bill ? '（帳合先の条件）' : '') + 'で、今日付けで請求すると支払期日は' + ymd(dueFrom(t, o.c)) + 'になります。' + (cur === 'EUR' ? '為替レートは請求日時点のEUR/JPYを自動で記録します。' : '') + '</div>' +
         '<button class="btn primary" data-act="invoice" data-id="' + esc(id) + '">請求を記録する</button></div>';
     }
     if (o.status === 'unpaid') actionHtml = '<div class="inline-form form"><b style="font-size:14px">入金を記録</b><div class="two"><label>入金日<input type="date" id="f_date" value="' + t + '"></label><label>入金額（' + cur + '）<input type="number" step="any" inputmode="decimal" id="f_amount" value="' + (Math.round(o.total * 100) / 100) + '"></label></div><button class="btn primary" data-act="pay" data-id="' + esc(id) + '">入金を記録する</button></div>';
@@ -573,7 +580,7 @@ function viewOrderForm(cid) {
     '<label>取引先<input class="search" style="height:40px" placeholder="取引先名で絞り込み" id="of_cq"><select id="of_c">' + opts + '</select></label>' +
     '<div class="subform hidden" id="of_newc"><b>新しい取引先（取引先マスタにも登録されます）</b><label>取引先名<input id="nc_name" placeholder="例：Cafe Graz"></label>' +
     '<div class="two"><label>国<select id="nc_country">' + COUNTRIES.map((x) => '<option>' + x + '</option>').join('') + '</select></label><label>通貨<select id="nc_cur"><option>JPY</option><option>EUR</option></select></label></div>' +
-    '<div class="two"><label>区分<select id="nc_kind">' + ['', 'カフェ', '卸', '小売', 'その他'].map((x) => '<option value="' + x + '">' + (x || '未設定') + '</option>').join('') + '</select></label><label>支払サイト（日）<input id="nc_site" type="number" inputmode="numeric" value="30"></label></div>' +
+    '<div class="two"><label>区分<select id="nc_kind">' + ['', 'カフェ', '卸', '小売', 'その他'].map((x) => '<option value="' + x + '">' + (x || '未設定') + '</option>').join('') + '</select></label><span></span></div>' + payFields('', 30, 'data-n') +
     '<label>先方の担当者・メール（任意）<input id="nc_contact" placeholder="例：山田さん yamada@example.com"></label></div>' +
     '<div id="of_lines" style="display:flex;flex-direction:column;gap:10px"></div><button class="btn ghost" data-act="addline" style="min-height:40px">＋ 商品を追加</button>' +
     '<div class="sumbox"><span class="note" id="of_curnote">合計</span><b id="of_total">¥0</b></div>' +
@@ -601,7 +608,7 @@ function filterCustSelect(text) {
 }
 function isNewCust() { return document.getElementById('of_c').value === '__new'; }
 function formCust() {
-  if (isNewCust()) return { '取引先名': val('nc_name'), '国': val('nc_country'), '通貨': val('nc_cur'), '支払サイト日数': val('nc_site') || 30 };
+  if (isNewCust()) return { '取引先名': val('nc_name'), '国': val('nc_country'), '通貨': val('nc_cur'), '支払条件': val('nc_pay'), '支払サイト日数': val('nc_site') || 30 };
   return D.cMap[document.getElementById('of_c').value] || null;
 }
 function formCur() { const c = formCust(); return c ? (c['通貨'] || 'JPY') : 'JPY'; }
@@ -635,7 +642,7 @@ function updOrderForm() {
   const plan = document.getElementById('of_plan').value;
   const overseas = c && c['国'] && c['国'] !== 'JP';
   const dueS = plan ? addDays(plan, -2) : '';
-  document.getElementById('of_preview').innerHTML = '<b>登録するとネクストアクションに表示されます</b><span>' + (overseas ? '出荷準備・書類チェック' : '出荷準備') + '　期日 ' + (dueS ? md(dueS) + (dayDiff(dueS) <= 0 ? '（今日）' : '') : '—') + '</span>' + (c ? '<span class="note">通貨 ' + esc(c['通貨'] || 'JPY') + '・支払サイト ' + esc(c['支払サイト日数'] || 30) + '日・請求書は' + (overseas ? '英語' : '日本語') + '</span>' : '');
+  document.getElementById('of_preview').innerHTML = '<b>登録するとネクストアクションに表示されます</b><span>' + (overseas ? '出荷準備・書類チェック' : '出荷準備') + '　期日 ' + (dueS ? md(dueS) + (dayDiff(dueS) <= 0 ? '（今日）' : '') : '—') + '</span>' + (c ? '<span class="note">通貨 ' + esc(c['通貨'] || 'JPY') + '・' + esc(payLabel(c)) + '・請求書は' + (overseas ? '英語' : '日本語') + '</span>' : '');
 }
 async function createOrder() {
   const sel = document.getElementById('of_c').value; const cid = sel === '__new' ? '' : sel;
@@ -644,7 +651,7 @@ async function createOrder() {
   if (sel === '__new') {
     if (!val('nc_name').trim()) { alert('新しい取引先の名前を入力してください'); return; }
     const ct = val('nc_contact').trim(); const em = (ct.match(/[^\s]+@[^\s]+/) || [''])[0];
-    newCustomer = { '取引先名': val('nc_name').trim(), '国': val('nc_country'), '通貨': val('nc_cur'), '区分': val('nc_kind'), '支払サイト日数': Number(val('nc_site')) || 30, '担当者名': ct.replace(em, '').trim(), 'メール': em, 'フェーズ': '取引中' };
+    newCustomer = { '取引先名': val('nc_name').trim(), '国': val('nc_country'), '通貨': val('nc_cur'), '区分': val('nc_kind'), '支払条件': val('nc_pay'), '支払サイト日数': Number(val('nc_site')) || 30, '担当者名': ct.replace(em, '').trim(), 'メール': em, 'フェーズ': '取引中' };
   }
   const payload = { customerId: cid, newCustomer, currency: formCur(), shipFrom: document.getElementById('of_from').value, plannedShip: document.getElementById('of_plan').value, memo: document.getElementById('of_memo').value, lines };
   if (!cid && !newCustomer) { alert('取引先を選んでください'); return; }
@@ -763,7 +770,7 @@ function viewCustomer(id) {
   if (!c) return top('取引先', { back: true }) + '<main class="view"><div class="empty">取引先が見つかりません</div></main>';
   const s = custStats(c); const os = D.orders.filter((o) => o['取引先'] === id);
   const kids = D.customers.filter((x) => x['帳合先'] === id && x.bill);
-  const kv = [['帳合先', c.bill ? '<a href="#/customer/' + encodeURIComponent(c['帳合先']) + '">' + esc(c.bill['取引先名']) + '</a>' : ''], ['請求書の宛先', c.bill ? c.bill['取引先名'] + '（帳合先）' : ''], ['国', c['国']], ['区分', c['区分']], ['担当者', c['担当者名']], ['メール', c['メール'] ? '<a href="mailto:' + esc(c['メール']) + '">' + esc(c['メール']) + '</a>' : ''], ['電話', c['電話'] ? '<a href="tel:' + esc(c['電話']) + '">' + esc(c['電話']) + '</a>' : ''], ['住所', c['住所']], ['通貨', c['通貨']], ['支払サイト', (c['支払サイト日数'] || 30) + '日'], ['請求書', c['国'] && c['国'] !== 'JP' ? '英語' : '日本語']];
+  const kv = [['帳合先', c.bill ? '<a href="#/customer/' + encodeURIComponent(c['帳合先']) + '">' + esc(c.bill['取引先名']) + '</a>' : ''], ['請求書の宛先', c.bill ? c.bill['取引先名'] + '（帳合先）' : ''], ['国', c['国']], ['区分', c['区分']], ['担当者', c['担当者名']], ['メール', c['メール'] ? '<a href="mailto:' + esc(c['メール']) + '">' + esc(c['メール']) + '</a>' : ''], ['電話', c['電話'] ? '<a href="tel:' + esc(c['電話']) + '">' + esc(c['電話']) + '</a>' : ''], ['住所', c['住所']], ['通貨', c['通貨']], ['支払条件', payLabel(c) + (c.bill ? '（帳合先の条件）' : '')], ['請求書', c['国'] && c['国'] !== 'JP' ? '英語' : '日本語']];
   return top(c['取引先名'] || '取引先', { back: true }) + '<main class="view" style="gap:12px">' +
     '<section class="kpis"><div class="kpi"><span>今年度の売上</span><b>' + man(s.fy) + '</b></div><div class="kpi"><span>入金待ち</span><b' + (s.unpaid ? ' style="color:var(--red)"' : '') + '>' + yen(s.unpaid) + '</b></div><div class="kpi"><span>受注件数</span><b>' + s.n + '件</b></div></section>' +
     '<div class="btns"><button class="btn primary" data-act="open" data-href="#/new-order?c=' + encodeURIComponent(id) + '">受注を登録</button><button class="btn" data-act="open" data-href="#/customer-edit/' + encodeURIComponent(id) + '">情報を編集</button></div>' +
@@ -783,7 +790,7 @@ function viewCustomerForm(id, phase) {
     '<label>帳合先（請求書の宛先。ない場合は空欄）<select data-f="帳合先"><option value="">なし（この取引先に直接請求）</option>' +
     D.customers.filter((x) => x['取引先ID'] !== id && !x.bill).sort((a, b) => (a['取引先名'] || '').localeCompare(b['取引先名'] || '', 'ja')).map((x) => '<option value="' + esc(x['取引先ID']) + '"' + (x['取引先ID'] === (c['帳合先'] || '') ? ' selected' : '') + '>' + esc(custLabel(x)) + '</option>').join('') + '</select></label>' +
     '<label>営業のフェーズ<select data-f="フェーズ">' + [''].concat(PHASES).map((x) => '<option value="' + x + '"' + (x === (c['フェーズ'] || '') ? ' selected' : '') + '>' + (x || '未設定') + '</option>').join('') + '</select></label>' +
-    '<div class="two"><label>区分<select data-f="区分">' + ['', 'カフェ', '卸', '小売', 'その他'].map((x) => '<option value="' + x + '"' + (x === (c['区分'] || '') ? ' selected' : '') + '>' + (x || '未設定') + '</option>').join('') + '</select></label>' + f('支払サイト日数', '支払サイト（日）', 'number') + '</div>' +
+    '<div class="two"><label>区分<select data-f="区分">' + ['', 'カフェ', '卸', '小売', 'その他'].map((x) => '<option value="' + x + '"' + (x === (c['区分'] || '') ? ' selected' : '') + '>' + (x || '未設定') + '</option>').join('') + '</select></label><span></span></div>' + payFields(c['支払条件'] || '', c['支払サイト日数'], 'data-f') +
     f('担当者名', '先方の担当者') + '<div class="two">' + f('メール', 'メール', 'email') + f('電話', '電話', 'tel') + '</div>' + f('住所', '住所') +
     '<label>メモ<textarea data-f="メモ">' + esc(c['メモ']) + '</textarea></label></section><button class="btn primary" data-act="savecust" data-id="' + esc(id) + '">保存する</button></main>';
 }
@@ -1122,6 +1129,7 @@ document.addEventListener('change', (ev) => {
   else if (t.id === 'of_plan') updOrderForm();
   else if (t.id === 'nc_country') { document.getElementById('nc_cur').value = t.value === 'JP' ? 'JPY' : 'EUR'; onCustChange(); }
   else if (t.id === 'nc_cur') { document.querySelectorAll('#of_lines .line-item').forEach((el) => setLinePrice(el)); updOrderForm(); }
+  else if (t.id === 'cf_pay' || t.id === 'nc_pay') { const d = document.getElementById(t.id === 'cf_pay' ? 'cf_days' : 'nc_site'); if (d) d.disabled = t.value !== '日数指定'; if (t.id === 'nc_pay') updOrderForm(); }
   else if (t.id === 'cf_country') { const c = document.getElementById('cf_cur'); if (c) c.value = t.value === 'JP' ? 'JPY' : 'EUR'; }
 });
 
