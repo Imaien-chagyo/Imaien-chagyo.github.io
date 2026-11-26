@@ -149,3 +149,18 @@ nav.tabs svg{width:22px;height:22px}
 .badge{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--green-l);color:var(--green-d);flex:none}
 .stat{display:flex;gap:12px;font-size:12px;color:var(--muted)}
 .stat b{color:var(--ink);font-weight:500}
+
+/* iPhone（Safari）で入力欄がはみ出して重なるのを防ぐ */
+.form label,.form .two>*,.line-item>*,.btns>*{min-width:0}
+.form input,.form select,.form textarea,.search{min-width:0;max-width:100%;font-size:16px}
+.form input,.form textarea,.search{-webkit-appearance:none;appearance:none}
+.form input[type=date]{display:block;line-height:42px;padding-top:0;padding-bottom:0;text-align:left}
+.form input[type=date]::-webkit-date-and-time-value{text-align:left}
+.form input[type=date]::-webkit-calendar-picker-indicator{margin-left:auto}
+.line-item{grid-template-columns:minmax(0,1fr) 64px 88px 24px}
+.subform{display:flex;flex-direction:column;gap:12px;padding:12px;border:1px dashed var(--field);border-radius:10px;background:#FBFAF6}
+.subform b{font-size:13px;color:var(--green-d)}
+.pbar{height:8px;background:var(--line);border-radius:4px;overflow:hidden}
+.pbar i{display:block;height:8px;border-radius:4px;background:var(--green)}
+.pbar i.warn{background:var(--amber-bar)}
+.top .seg{margin-top:2px}

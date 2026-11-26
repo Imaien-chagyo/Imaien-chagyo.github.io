@@ -8,7 +8,7 @@ const shell = document.getElementById('shell');
 const DEMO = !!window.DEMO_DATA;
 let D = null;            // サーバーから受け取ったデータ（加工済み）
 let token = localStorage.getItem('ip_token') || '';
-let ui = { orderChip: 'active', orderQ: '', custChip: 'all', custQ: '', showAllActions: false, sel: null, edit: false };
+let ui = { salesTab: 'w', orderChip: 'active', orderQ: '', custChip: 'all', custQ: '', showAllActions: false, sel: null, edit: false };
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const num = (v) => (typeof v === 'number' ? v : parseFloat(v)) || 0;
@@ -130,11 +130,12 @@ function setData(raw) {
   });
   d.orders.sort((a, b) => (b['受注日'] || '').localeCompare(a['受注日'] || '') || b.no.localeCompare(a.no));
   d.tMap = {}; d.tasks.forEach((t) => { d.tMap[t['タスクID']] = t; });
+  d.projects = d.projects || []; d.pjMap = {}; d.projects.forEach((x) => { d.pjMap[x['プロジェクトID']] = x; });
   D = d;
   render();
 }
 function custLabel(c) { return (c['取引先名'] || '') + (c['国'] && c['国'] !== 'JP' ? '（' + c['国'] + '）' : ''); }
-function phaseOf(c) { const m = /フェーズ: ([^、\n]+)/.exec(c['メモ'] || ''); return m ? m[1].trim() : ''; }
+function phaseOf(c) { if (c['フェーズ']) return String(c['フェーズ']); const m = /フェーズ: ([^、\n]+)/.exec(c['メモ'] || ''); return m ? m[1].trim() : ''; }
 function fyStart() { const t = todayStr(); const y = +t.slice(0, 4), m = +t.slice(5, 7); return (m >= 4 ? y : y - 1) + '-04'; }
 function salesByMonth() { const r = {}; D.orders.forEach((o) => { if (!o.cancel && o['請求日']) { const k = o['請求日'].slice(0, 7); r[k] = (r[k] || 0) + o.yen; } }); return r; }
 function monthsBack(n) { const t = todayStr(); let y = +t.slice(0, 4), m = +t.slice(5, 7); const out = []; for (let i = 0; i < n; i++) { out.unshift(y + '-' + String(m).padStart(2, '0')); m--; if (!m) { m = 12; y--; } } return out; }
@@ -147,7 +148,7 @@ window.addEventListener('hashchange', () => { ui.edit = false; render(); const m
 function tabOf(p) {
   const k = p[0] || '';
   if (/^(order|orders|new-order)$/.test(k)) return 'orders';
-  if (/^(sales|customer|customer-edit)$/.test(k)) return 'sales';
+  if (/^(sales|customer|customer-edit|project-edit)$/.test(k)) return 'sales';
   if (/^(stock|product-edit)$/.test(k)) return 'stock';
   if (/^(input|task|task-edit)$/.test(k)) return 'input';
   return 'dash';
@@ -174,7 +175,8 @@ function render() {
     case 'new-order': html = viewOrderForm(r.q.get('c') || ''); break;
     case 'sales': html = viewSales(); break;
     case 'customer': html = viewCustomer(decodeURIComponent(p[1] || '')); break;
-    case 'customer-edit': html = viewCustomerForm(decodeURIComponent(p[1] || 'new')); break;
+    case 'customer-edit': html = viewCustomerForm(decodeURIComponent(p[1] || 'new'), r.q.get('phase') || ''); break;
+    case 'project-edit': html = viewProjectForm(decodeURIComponent(p[1] || 'new')); break;
     case 'stock': html = viewStock(); break;
     case 'product-edit': html = viewProductForm(decodeURIComponent(p[1] || 'new')); break;
     case 'input': html = viewInput(); break;
@@ -227,7 +229,13 @@ function viewDash() {
     '<section style="display:flex;flex-direction:column;gap:8px"><div class="h2row"><p class="sec-title">ネクストアクション</p><span class="note">' + acts.length + '件・期日が近い順</span></div>' +
     '<div class="card list">' + (actRows || '<div class="empty">対応が必要な作業はありません</div>') +
     (acts.length > 10 ? '<button class="more" data-act="toggleacts">' + (ui.showAllActions ? '10件だけ表示' : 'すべて表示（' + acts.length + '件）') + '</button>' : '') + '</div></section>' +
-    '</main>';
+    dashProjects() + '</main>';
+}
+
+function dashProjects() {
+  const list = sortedProjects().filter((x) => (x['状態'] || '進行中') === '進行中');
+  if (!list.length) return '';
+  return '<section style="display:flex;flex-direction:column;gap:8px"><div class="h2row"><p class="sec-title">進行中のプロジェクト</p><a class="note" href="#/sales" data-act="gopj">すべて見る</a></div>' + list.map(projectCard).join('') + '</section>';
 }
 
 /* ================= 受注 ================= */
@@ -300,9 +308,13 @@ function viewOrder(id) {
 /* ---------- 受注フォーム ---------- */
 function viewOrderForm(cid) {
   const cs = D.customers.slice().sort((a, b) => (a['取引先名'] || '').localeCompare(b['取引先名'] || '', 'ja'));
-  const opts = '<option value="">選んでください</option>' + cs.map((c) => '<option value="' + esc(c['取引先ID']) + '"' + (c['取引先ID'] === cid ? ' selected' : '') + '>' + esc(custLabel(c)) + '</option>').join('');
+  const opts = '<option value="">選んでください</option><option value="__new">＋ 新しい取引先を登録</option>' + cs.map((c) => '<option value="' + esc(c['取引先ID']) + '"' + (c['取引先ID'] === cid ? ' selected' : '') + '>' + esc(custLabel(c)) + '</option>').join('');
   return top('受注を登録', { back: true }) + '<main class="view" style="gap:12px"><section class="card pad form" id="oform">' +
-    '<label>取引先<input class="search" style="height:38px;font-size:14px" placeholder="取引先名で絞り込み" id="of_cq"><select id="of_c">' + opts + '</select></label>' +
+    '<label>取引先<input class="search" style="height:40px" placeholder="取引先名で絞り込み" id="of_cq"><select id="of_c">' + opts + '</select></label>' +
+    '<div class="subform hidden" id="of_newc"><b>新しい取引先（取引先マスタにも登録されます）</b><label>取引先名<input id="nc_name" placeholder="例：Cafe Graz"></label>' +
+    '<div class="two"><label>国<select id="nc_country">' + COUNTRIES.map((x) => '<option>' + x + '</option>').join('') + '</select></label><label>通貨<select id="nc_cur"><option>JPY</option><option>EUR</option></select></label></div>' +
+    '<div class="two"><label>区分<select id="nc_kind">' + ['', 'カフェ', '卸', '小売', 'その他'].map((x) => '<option value="' + x + '">' + (x || '未設定') + '</option>').join('') + '</select></label><label>支払サイト（日）<input id="nc_site" type="number" inputmode="numeric" value="30"></label></div>' +
+    '<label>先方の担当者・メール（任意）<input id="nc_contact" placeholder="例：山田さん yamada@example.com"></label></div>' +
     '<div id="of_lines" style="display:flex;flex-direction:column;gap:10px"></div><button class="btn ghost" data-act="addline" style="min-height:40px">＋ 商品を追加</button>' +
     '<div class="sumbox"><span class="note" id="of_curnote">合計</span><b id="of_total">¥0</b></div>' +
     '<div class="two"><label>出荷予定日<input type="date" id="of_plan" value="' + addDays(todayStr(), 3) + '"></label><label>出荷元<select id="of_from">' + CONFIG.LOCATIONS.map((l) => '<option>' + l + '</option>').join('') + '</select></label></div>' +
@@ -315,12 +327,18 @@ function lineHtml(i, cur) {
     '<label style="font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:6px">数量<input class="l_q" type="number" step="any" inputmode="decimal"></label>' +
     '<label style="font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:6px">単価<span class="l_unit"></span><input class="l_u" type="number" step="any" inputmode="decimal"></label><button class="x" data-act="rmline" aria-label="削除">×</button></div>';
 }
-function formCur() { const c = D.cMap[document.getElementById('of_c').value]; return c ? (c['通貨'] || 'JPY') : 'JPY'; }
+function isNewCust() { return document.getElementById('of_c').value === '__new'; }
+function formCust() {
+  if (isNewCust()) return { '取引先名': val('nc_name'), '国': val('nc_country'), '通貨': val('nc_cur'), '支払サイト日数': val('nc_site') || 30 };
+  return D.cMap[document.getElementById('of_c').value] || null;
+}
+function formCur() { const c = formCust(); return c ? (c['通貨'] || 'JPY') : 'JPY'; }
 function initOrderForm() {
   const wrap = document.getElementById('of_lines'); wrap.innerHTML = lineHtml(0); onCustChange(true); updOrderForm();
 }
 function onCustChange(initial) {
-  const c = D.cMap[document.getElementById('of_c').value];
+  document.getElementById('of_newc').classList.toggle('hidden', !isNewCust());
+  const c = formCust();
   if (c) document.getElementById('of_from').value = (c['国'] && c['国'] !== 'JP') ? 'Graz' : '学大';
   if (!initial) document.querySelectorAll('#of_lines .line-item').forEach((el) => setLinePrice(el));
   updOrderForm();
@@ -341,17 +359,23 @@ function updOrderForm() {
   });
   document.getElementById('of_total').textContent = money(total, cur);
   document.getElementById('of_curnote').textContent = '合計（' + cur + '）';
-  const c = D.cMap[document.getElementById('of_c').value];
+  const c = formCust();
   const plan = document.getElementById('of_plan').value;
   const overseas = c && c['国'] && c['国'] !== 'JP';
   const dueS = plan ? addDays(plan, -2) : '';
   document.getElementById('of_preview').innerHTML = '<b>登録するとネクストアクションに表示されます</b><span>' + (overseas ? '出荷準備・書類チェック' : '出荷準備') + '　期日 ' + (dueS ? md(dueS) + (dayDiff(dueS) <= 0 ? '（今日）' : '') : '—') + '</span>' + (c ? '<span class="note">通貨 ' + esc(c['通貨'] || 'JPY') + '・支払サイト ' + esc(c['支払サイト日数'] || 30) + '日・請求書は' + (overseas ? '英語' : '日本語') + '</span>' : '');
 }
 async function createOrder() {
-  const cid = document.getElementById('of_c').value;
+  const sel = document.getElementById('of_c').value; const cid = sel === '__new' ? '' : sel;
   const lines = [...document.querySelectorAll('#of_lines .line-item')].map((el) => ({ productId: el.querySelector('.l_p').value, qty: el.querySelector('.l_q').value, price: el.querySelector('.l_u').value || 0 }));
-  const payload = { customerId: cid, currency: formCur(), shipFrom: document.getElementById('of_from').value, plannedShip: document.getElementById('of_plan').value, memo: document.getElementById('of_memo').value, lines };
-  if (!cid) { alert('取引先を選んでください'); return; }
+  let newCustomer = null;
+  if (sel === '__new') {
+    if (!val('nc_name').trim()) { alert('新しい取引先の名前を入力してください'); return; }
+    const ct = val('nc_contact').trim(); const em = (ct.match(/[^\s]+@[^\s]+/) || [''])[0];
+    newCustomer = { '取引先名': val('nc_name').trim(), '国': val('nc_country'), '通貨': val('nc_cur'), '区分': val('nc_kind'), '支払サイト日数': Number(val('nc_site')) || 30, '担当者名': ct.replace(em, '').trim(), 'メール': em, 'フェーズ': '取引中' };
+  }
+  const payload = { customerId: cid, newCustomer, currency: formCur(), shipFrom: document.getElementById('of_from').value, plannedShip: document.getElementById('of_plan').value, memo: document.getElementById('of_memo').value, lines };
+  if (!cid && !newCustomer) { alert('取引先を選んでください'); return; }
   if (!lines.some((l) => l.productId && num(l.qty) > 0)) { alert('商品と数量を入力してください'); return; }
   const before = new Set(D.orders.map((o) => o['受注ID']));
   if (await write('createOrder', payload, '受注を登録しました')) {
@@ -378,13 +402,54 @@ function custListHtml() {
   }).join('');
   return cards || '<div class="empty">該当する取引先はありません</div>';
 }
+const PHASES = ['取引中', '商談中', 'パイプライン', '失注'];
+function salesSeg() {
+  return '<div class="seg"><button class="' + (ui.salesTab === 'w' ? 'on' : '') + '" data-act="stab" data-v="w">卸売り営業</button><button class="' + (ui.salesTab === 'p' ? 'on' : '') + '" data-act="stab" data-v="p">プロジェクト</button></div>';
+}
 function viewSales() {
+  if (ui.salesTab === 'p') return viewProjects();
   const phases = {}; D.customers.forEach((c) => { const p = phaseOf(c) || 'その他'; phases[p] = (phases[p] || 0) + 1; });
-  const order = ['取引中', '商談中', 'パイプライン', 'その他'];
+  const order = PHASES.concat(['その他']);
   const chipDefs = [['all', 'すべて', D.customers.length]].concat(order.filter((p) => phases[p]).map((p) => [p, p, phases[p]]));
-  return top('営業ボード') + '<main class="view" style="gap:12px"><div class="chips">' + chipDefs.map((x) => '<button class="chip' + (ui.custChip === x[0] ? ' on' : '') + '" data-act="cchip" data-v="' + esc(x[0]) + '">' + esc(x[1]) + ' ' + x[2] + '</button>').join('') + '</div>' +
+  return top('営業ボード', { extra: salesSeg() }) + '<main class="view" style="gap:12px"><div class="chips">' + chipDefs.map((x) => '<button class="chip' + (ui.custChip === x[0] ? ' on' : '') + '" data-act="cchip" data-v="' + esc(x[0]) + '">' + esc(x[1]) + ' ' + x[2] + '</button>').join('') + '</div>' +
     '<input class="search" type="search" placeholder="取引先名・国・メモで検索" value="' + esc(ui.custQ) + '" data-input="custQ"><div id="clist" style="display:flex;flex-direction:column;gap:12px">' + custListHtml() + '</div>' +
-    '<button class="btn primary" data-act="open" data-href="#/customer-edit/new">＋ 取引先を追加</button></main>';
+    '<button class="btn primary" data-act="open" data-href="#/customer-edit/new">＋ 取引先・リードを追加</button></main>';
+}
+
+/* ---------- プロジェクト ---------- */
+function projectCard(x) {
+  const budget = num(x['予算']), cost = num(x['費用']), income = num(x['収入']);
+  const pct = budget ? Math.round(cost / budget * 100) : 0;
+  const warn = budget && pct >= 80;
+  const dd = x['期日'] ? due(x['期日']) : null;
+  const st = x['状態'] || '進行中';
+  return '<div class="ocard" data-act="open" data-href="#/project-edit/' + encodeURIComponent(x['プロジェクトID']) + '"' + (st !== '進行中' ? ' style="opacity:.6"' : '') + '>' +
+    '<div class="l1"><b style="font-size:15px">' + esc(x['プロジェクト名']) + '</b><span class="badge">' + esc(st) + '</span></div>' +
+    '<div class="stat"><span>期日 <b' + (dd && dd.over && st === '進行中' ? ' style="color:var(--red)"' : '') + '>' + (x['期日'] ? ymd(x['期日']) : '未設定') + '</b></span>' + (income ? '<span>収入 <b>' + yen(income) + '</b></span>' : '') + '</div>' +
+    (budget ? '<div class="pbar"><i class="' + (warn ? 'warn' : '') + '" style="width:' + Math.min(pct, 100) + '%"></i></div><span class="note"' + (warn ? ' style="color:var(--amber);font-weight:700"' : '') + '>費用 ' + yen(cost) + '／予算 ' + yen(budget) + '（' + pct + '%）' + (warn ? '・予算の8割を超えました' : '') + '</span>'
+      : '<span class="note">予算は未設定です</span>') +
+    (x['メモ'] ? '<span class="note" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(x['メモ']) + '</span>' : '') + '</div>';
+}
+function sortedProjects() {
+  const rank = { '進行中': 0, '完了': 1, '中止': 2 };
+  return D.projects.slice().sort((a, b) => (rank[a['状態'] || '進行中'] - rank[b['状態'] || '進行中']) || (a['期日'] || '9').localeCompare(b['期日'] || '9'));
+}
+function viewProjects() {
+  const list = sortedProjects();
+  return top('営業ボード', { extra: salesSeg() }) + '<main class="view" style="gap:12px">' +
+    (list.map(projectCard).join('') || '<div class="empty">プロジェクトはまだありません</div>') +
+    '<button class="btn primary" data-act="open" data-href="#/project-edit/new">＋ プロジェクトを追加</button></main>';
+}
+function viewProjectForm(id) {
+  const x = id === 'new' ? { '状態': '進行中' } : (D.pjMap[id] || {});
+  const f = (k, label, type, ph) => '<label>' + label + '<input data-f="' + k + '" type="' + (type || 'text') + '"' + (type === 'number' ? ' inputmode="numeric"' : '') + (ph ? ' placeholder="' + ph + '"' : '') + ' value="' + esc(x[k]) + '"></label>';
+  return top(id === 'new' ? 'プロジェクトを追加' : 'プロジェクトを編集', { back: true }) + '<main class="view" style="gap:12px"><section class="card pad form" id="pjform">' +
+    f('プロジェクト名', 'プロジェクト名', 'text', '例：Sawakai 冬イベント') +
+    '<div class="two"><label>状態<select data-f="状態">' + ['進行中', '完了', '中止'].map((v) => '<option' + (v === x['状態'] ? ' selected' : '') + '>' + v + '</option>').join('') + '</select></label>' + f('期日', '期日', 'date') + '</div>' +
+    '<div class="two">' + f('予算', '予算（円）', 'number') + f('費用', '費用の実績（円）', 'number') + '</div>' + f('収入', '収入（円）', 'number') +
+    '<label>メモ<textarea data-f="メモ">' + esc(x['メモ']) + '</textarea></label></section>' +
+    '<div class="note">費用と収入は、今は手で入力します。経費シートや受注との連動は第4段階で追加します。</div>' +
+    '<button class="btn primary" data-act="saveproj" data-id="' + esc(id) + '">保存する</button></main>';
 }
 function viewCustomer(id) {
   const c = D.cMap[id];
@@ -399,12 +464,13 @@ function viewCustomer(id) {
     '<p class="sec-title">受注（' + os.length + '件）</p>' + (os.slice(0, 50).map(orderCard).join('') || '<div class="empty">まだ受注はありません</div>') + '</main>';
 }
 const COUNTRIES = ['JP', 'AT', 'DE', 'NL', 'IT', 'FR', 'CZ', 'SK', 'SI', 'HU', 'GB', 'US', 'AE', 'DO'];
-function viewCustomerForm(id) {
-  const c = id === 'new' ? { '国': 'JP', '通貨': 'JPY', '支払サイト日数': 30 } : (D.cMap[id] || {});
+function viewCustomerForm(id, phase) {
+  const c = id === 'new' ? { '国': 'JP', '通貨': 'JPY', '支払サイト日数': 30, 'フェーズ': phase || '' } : Object.assign({}, D.cMap[id] || {}, { 'フェーズ': phaseOf(D.cMap[id] || {}) });
   const f = (k, label, type) => '<label>' + label + '<input data-f="' + k + '" type="' + (type || 'text') + '" value="' + esc(c[k]) + '"></label>';
   const ctry = COUNTRIES.indexOf(c['国']) < 0 && c['国'] ? COUNTRIES.concat([c['国']]) : COUNTRIES;
   return top(id === 'new' ? '取引先を追加' : '取引先を編集', { back: true }) + '<main class="view" style="gap:12px"><section class="card pad form" id="cform">' + f('取引先名', '取引先名') +
     '<div class="two"><label>国<select data-f="国" id="cf_country">' + ctry.map((x) => '<option' + (x === c['国'] ? ' selected' : '') + '>' + x + '</option>').join('') + '</select></label><label>通貨<select data-f="通貨" id="cf_cur">' + ['JPY', 'EUR'].map((x) => '<option' + (x === c['通貨'] ? ' selected' : '') + '>' + x + '</option>').join('') + '</select></label></div>' +
+    '<label>営業のフェーズ<select data-f="フェーズ">' + [''].concat(PHASES).map((x) => '<option value="' + x + '"' + (x === (c['フェーズ'] || '') ? ' selected' : '') + '>' + (x || '未設定') + '</option>').join('') + '</select></label>' +
     '<div class="two"><label>区分<select data-f="区分">' + ['', 'カフェ', '卸', '小売', 'その他'].map((x) => '<option value="' + x + '"' + (x === (c['区分'] || '') ? ' selected' : '') + '>' + (x || '未設定') + '</option>').join('') + '</select></label>' + f('支払サイト日数', '支払サイト（日）', 'number') + '</div>' +
     f('担当者名', '先方の担当者') + '<div class="two">' + f('メール', 'メール', 'email') + f('電話', '電話', 'tel') + '</div>' + f('住所', '住所') +
     '<label>メモ<textarea data-f="メモ">' + esc(c['メモ']) + '</textarea></label></section><button class="btn primary" data-act="savecust" data-id="' + esc(id) + '">保存する</button></main>';
@@ -446,6 +512,9 @@ function viewInput() {
     '<button class="tile" data-act="goorders" data-chip="unshipped">出荷を記録<small>出荷待ち ' + cnt('unshipped') + '件</small></button>' +
     '<button class="tile" data-act="goorders" data-chip="uninvoiced">請求を記録<small>請求待ち ' + cnt('uninvoiced') + '件</small></button>' +
     '<button class="tile" data-act="goorders" data-chip="unpaid">入金を記録<small>入金待ち ' + cnt('unpaid') + '件</small></button></div></section>' +
+    '<section style="display:flex;flex-direction:column;gap:8px"><p class="note" style="margin:0">営業</p><div class="tiles">' +
+    '<button class="tile" data-act="open" data-href="#/customer-edit/new?phase=' + encodeURIComponent('パイプライン') + '">リードを追加<small>営業先の候補</small></button>' +
+    '<button class="tile" data-act="open" data-href="#/project-edit/new">プロジェクトを追加<small>進行中 ' + D.projects.filter((x) => (x['状態'] || '進行中') === '進行中').length + '件</small></button></div></section>' +
     '<section style="display:flex;flex-direction:column;gap:8px"><p class="note" style="margin:0">マスタ</p><div class="tiles">' +
     '<button class="tile" data-act="open" data-href="#/customer-edit/new">取引先を追加</button><button class="tile" data-act="open" data-href="#/product-edit/new">商品を追加</button></div></section>' +
     '<section style="display:flex;flex-direction:column;gap:8px"><p class="note" style="margin:0">その他</p><div class="tiles">' +
@@ -484,6 +553,9 @@ document.addEventListener('click', async (ev) => {
     case 'goorders': ui.orderChip = el.dataset.chip; ui.orderQ = ''; go('#/orders'); break;
     case 'ochip': ui.orderChip = el.dataset.v; render(); break;
     case 'cchip': ui.custChip = el.dataset.v; render(); break;
+    case 'gopj': ev.preventDefault(); ui.salesTab = 'p'; go('#/sales'); break;
+    case 'stab': ui.salesTab = el.dataset.v; render(); break;
+    case 'saveproj': { const v = formVals('#pjform'); if (!v['プロジェクト名']) { alert('プロジェクト名を入力してください'); break; } if (id !== 'new') v['プロジェクトID'] = id; if (await write('saveProject', v, '保存しました')) { ui.salesTab = 'p'; go('#/sales'); } break; }
     case 'editon': ui.edit = true; render(); break;
     case 'editoff': ui.edit = false; render(); break;
     case 'ship': await write('recordShip', { id, date: val('f_date'), tracking: val('f_track') }, '出荷を記録しました'); break;
@@ -512,8 +584,8 @@ document.addEventListener('input', (ev) => {
   }
   if (t.id === 'of_cq') {
     const q = t.value.trim().toLowerCase(); const sel = document.getElementById('of_c');
-    [...sel.options].forEach((o, i) => { if (i) o.hidden = q && o.textContent.toLowerCase().indexOf(q) < 0; });
-    const vis = [...sel.options].filter((o, i) => i && !o.hidden); if (vis.length === 1) { sel.value = vis[0].value; onCustChange(); }
+    [...sel.options].forEach((o, i) => { if (i > 1) o.hidden = q && o.textContent.toLowerCase().indexOf(q) < 0; });
+    const vis = [...sel.options].filter((o, i) => i > 1 && !o.hidden); if (vis.length === 1) { sel.value = vis[0].value; onCustChange(); }
     return;
   }
   if (t.closest && t.closest('#oform')) updOrderForm();
@@ -523,6 +595,8 @@ document.addEventListener('change', (ev) => {
   if (t.id === 'of_c') onCustChange();
   else if (t.classList && t.classList.contains('l_p')) { setLinePrice(t.closest('.line-item')); updOrderForm(); }
   else if (t.id === 'of_plan') updOrderForm();
+  else if (t.id === 'nc_country') { document.getElementById('nc_cur').value = t.value === 'JP' ? 'JPY' : 'EUR'; onCustChange(); }
+  else if (t.id === 'nc_cur') { document.querySelectorAll('#of_lines .line-item').forEach((el) => setLinePrice(el)); updOrderForm(); }
   else if (t.id === 'cf_country') { const c = document.getElementById('cf_cur'); if (c) c.value = t.value === 'JP' ? 'JPY' : 'EUR'; }
 });
 
