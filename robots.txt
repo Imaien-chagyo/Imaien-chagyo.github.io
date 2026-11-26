@@ -1,6 +1,5 @@
 User-agent: *
 Allow: /
 Disallow: /old/
-Disallow: /portal/
 
 Sitemap: https://imaien.com/sitemap.xml
