@@ -8,7 +8,11 @@ const shell = document.getElementById('shell');
 const DEMO = !!window.DEMO_DATA;
 let D = null;            // サーバーから受け取ったデータ（加工済み）
 let token = localStorage.getItem('ip_token') || '';
-let ui = { stockLoc: 'all', stockQ: '', salesTab: 'w', orderChip: 'active', orderQ: '', custChip: 'all', custQ: '', showAllActions: false, sel: null, edit: false };
+let ui = { stockLoc: 'all', stockQ: '', stockGroup: 'list', salesTab: 'w', orderChip: 'active', orderQ: '', orderView: 'list', openGroup: '', custChip: 'all', custQ: '', custBill: '', custView: 'list', showAllActions: false, sel: null, edit: false,
+  sort: { orders: { k: '', dir: 1 }, cust: { k: '', dir: 1 }, stock: { k: '', dir: 1 } } };
+const mqPC = window.matchMedia('(min-width: 1024px)');
+const isPC = () => mqPC.matches;
+mqPC.addEventListener && mqPC.addEventListener('change', () => { if (D) render(); });
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const num = (v) => (typeof v === 'number' ? v : parseFloat(v)) || 0;
@@ -98,9 +102,9 @@ function toast(msg) {
   const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; shell.appendChild(t);
   setTimeout(() => t.remove(), 2600);
 }
-async function write(action, payload, okMsg) {
-  busy(true);
-  try { const data = await api(action, payload); setData(data); busy(false); if (okMsg) toast(okMsg); return true; }
+async function write(action, payload, okMsg, busyText) {
+  busy(true, busyText);
+  try { const data = await api(action, payload); setData(data); busy(false); if (data && data.warning) alert(data.warning); else if (okMsg) toast(okMsg); return true; }
   catch (e) { busy(false); if (e.message !== 'auth') alert(e.message); return false; }
 }
 
@@ -109,12 +113,19 @@ function setData(raw) {
   localStorage.setItem('ip_data', JSON.stringify(raw));
   const d = raw;
   d.cMap = {}; d.customers.forEach((c) => { d.cMap[c['取引先ID']] = c; });
+  d.customers.forEach((c) => { c.bill = c['帳合先'] && d.cMap[c['帳合先']] && c['帳合先'] !== c['取引先ID'] ? d.cMap[c['帳合先']] : null; });
+  d.suppliers = d.suppliers || []; d.supMap = {}; d.suppliers.forEach((x) => { d.supMap[x['仕入先ID']] = x; });
+  d.invoices = d.invoices || []; d.invByOrder = {};
+  d.invoices.forEach((x) => { (d.invByOrder[x['受注ID']] = d.invByOrder[x['受注ID']] || []).push(x); });
+  Object.keys(d.invByOrder).forEach((k) => d.invByOrder[k].sort((a, b) => num(b['版']) - num(a['版'])));
   d.pMap = {}; d.products.forEach((p) => { d.pMap[p['商品ID']] = p; });
   d.aMap = {}; d.actions.forEach((a) => { d.aMap[a['参照ID']] = a; });
   const byO = {}; d.lines.forEach((l) => { (byO[l['受注ID']] = byO[l['受注ID']] || []).push(l); });
   const fx = d.eurjpy ? d.eurjpy.rate : 0;
   d.orders.forEach((o) => {
     o.c = d.cMap[o['取引先']] || { '取引先名': '（不明な取引先）', '国': '' };
+    o.billTo = o.c.bill || o.c;
+    o.inv = (d.invByOrder[o['受注ID']] || [])[0] || null;
     o.lines = byO[o['受注ID']] || [];
     o.total = o.lines.reduce((s, l) => s + num(l['数量']) * num(l['単価']), 0);
     const cur = o['通貨'] || 'JPY';
@@ -142,8 +153,9 @@ function buildStock(d) {
   const grp = (pid, loc) => { const k = pid + '|' + loc; return S[k] || (S[k] = { pid, loc, qty: 0, safe: 0, lots: {} }); };
   (d.movements || []).forEach((m) => {
     const g = grp(m['商品'], m['拠点']); const q = num(m['数量']); g.qty += q;
-    const lk = String(m['ロット'] || ''); const l = g.lots[lk] || (g.lots[lk] = { lot: lk, exp: '', qty: 0 });
+    const lk = String(m['ロット'] || ''); const l = g.lots[lk] || (g.lots[lk] = { lot: lk, exp: '', qty: 0, cost: null });
     l.qty += q; if (m['賞味期限']) l.exp = m['賞味期限'];
+    if (q > 0 && m['単価'] !== '' && m['単価'] != null && !isNaN(parseFloat(m['単価']))) l.cost = num(m['単価']);
   });
   (d.safety || []).forEach((x) => { grp(x['商品'], x['拠点']).safe = num(x['安全在庫']); });
   d.stock = Object.keys(S).map((k) => {
@@ -151,6 +163,9 @@ function buildStock(d) {
     g.lotList = Object.keys(g.lots).map((x) => g.lots[x]).map((l) => { l.qty = r3(l.qty); return l; }).filter((l) => l.qty !== 0)
       .sort((a, b) => (a.exp || '9999').localeCompare(b.exp || '9999'));
     g.low = g.safe > 0 && g.qty < g.safe;
+    g.std = costOf(g.p); g.sup = d.supMap[g.p['仕入先']] || null;
+    g.value = g.lotList.reduce((s, l) => s + Math.max(l.qty, 0) * (l.cost != null ? l.cost : (g.std || 0)), 0);
+    g.unit = g.qty > 0 ? g.value / g.qty : (g.std || 0);
     g.expiring = g.lotList.filter((l) => l.qty > 0 && l.exp && dayDiff(l.exp) <= 90);
     return g;
   });
@@ -162,29 +177,47 @@ function buildStock(d) {
     g.expiring.forEach((l) => { const dd = dayDiff(l.exp); d.stockActs.push({ '作業': '優先販売の検討', '案件名': label + (l.lot ? ' ' + l.lot : ''), '期日': addDays(l.exp, -90), href: '#/stock-item/' + encodeURIComponent(g.pid), label: dd < 0 ? '期限切れ' : '期限まで' + dd + '日', cls: dd <= 30 ? 'red' : 'amber', over: dd <= 30 }); });
   });
 }
+function costOf(p) { const v = p ? p['仕入単価'] : ''; return v === '' || v == null || isNaN(parseFloat(v)) ? null : num(v); }
+function supName(id) { const x = D && D.supMap[id]; return x ? x['仕入先名'] : ''; }
 function unitOf(pid) { return (D.pMap[pid] || {})['単位'] || ''; }
 function custLabel(c) { return (c['取引先名'] || '') + (c['国'] && c['国'] !== 'JP' ? '（' + c['国'] + '）' : ''); }
 function phaseOf(c) { if (c['フェーズ']) return String(c['フェーズ']); const m = /フェーズ: ([^、\n]+)/.exec(c['メモ'] || ''); return m ? m[1].trim() : ''; }
-function fyStart() { const t = todayStr(); const y = +t.slice(0, 4), m = +t.slice(5, 7); return (m >= 4 ? y : y - 1) + '-04'; }
+/* 会計年度は2月から翌1月 */
+const FY_START_MONTH = 2;
+function fyStart() { const t = todayStr(); const y = +t.slice(0, 4), m = +t.slice(5, 7); return (m >= FY_START_MONTH ? y : y - 1) + '-' + String(FY_START_MONTH).padStart(2, '0'); }
+function fyLabel() { const y = +fyStart().slice(0, 4); return y + '年度（' + y + '年2月〜' + (y + 1) + '年1月）'; }
 function salesByMonth() { const r = {}; D.orders.forEach((o) => { if (!o.cancel && o['請求日']) { const k = o['請求日'].slice(0, 7); r[k] = (r[k] || 0) + o.yen; } }); return r; }
 function monthsBack(n) { const t = todayStr(); let y = +t.slice(0, 4), m = +t.slice(5, 7); const out = []; for (let i = 0; i < n; i++) { out.unshift(y + '-' + String(m).padStart(2, '0')); m--; if (!m) { m = 12; y--; } } return out; }
 
 /* ================= ルーティング ================= */
 function route() { const h = (location.hash || '#/').slice(1); const [path, q] = h.split('?'); const parts = path.split('/').filter(Boolean); return { parts, q: new URLSearchParams(q || '') }; }
 function go(h) { if (location.hash === h) render(); else location.hash = h; }
+/* PC用の表：列の見出しを押すと並べ替え */
+function sortRows(t, cols, rows) {
+  const st = ui.sort[t]; const col = cols.find((c) => c.k === st.k);
+  if (!col) return rows;
+  const v = col.sort || col.val;
+  return rows.slice().sort((a, b) => { const x = v(a), y = v(b); const r = typeof x === 'number' && typeof y === 'number' ? x - y : String(x == null ? '' : x).localeCompare(String(y == null ? '' : y), 'ja'); return r * st.dir; });
+}
+function tableHtml(t, cols, rows, href) {
+  const st = ui.sort[t];
+  const head = '<tr>' + cols.map((c) => '<th class="' + (c.r ? 'r' : '') + (st.k === c.k ? ' on' : '') + '" data-act="sort" data-t="' + t + '" data-k="' + c.k + '">' + esc(c.label) + (st.k === c.k ? (st.dir > 0 ? ' ▲' : ' ▼') : '') + '</th>').join('') + '</tr>';
+  const body = sortRows(t, cols, rows).map((r) => '<tr data-act="open" data-href="' + href(r) + '"' + (r._dim ? ' class="dim"' : '') + '>' + cols.map((c) => '<td class="' + (c.r ? 'r' : '') + '">' + (c.html ? c.html(r) : esc(c.val(r))) + '</td>').join('') + '</tr>').join('');
+  return '<div class="card tbl-wrap"><table class="tbl"><thead>' + head + '</thead><tbody>' + (body || '<tr><td colspan="' + cols.length + '" class="empty">該当するものはありません</td></tr>') + '</tbody></table></div>';
+}
 window.addEventListener('hashchange', () => { ui.edit = false; render(); const m = document.querySelector('main.view'); if (m) m.scrollTop = 0; });
 
 function tabOf(p) {
   const k = p[0] || '';
   if (/^(order|orders|new-order)$/.test(k)) return 'orders';
   if (/^(sales|customer|customer-edit|project-edit)$/.test(k)) return 'sales';
-  if (/^(stock|stock-item|stock-op|stocktake|products|product-edit)$/.test(k)) return 'stock';
+  if (/^(stock|stock-item|stock-op|stocktake|products|product-edit|suppliers|supplier-edit)$/.test(k)) return 'stock';
   if (/^(input|task|task-edit)$/.test(k)) return 'input';
   return 'dash';
 }
 function nav(active) {
   const t = [['dash', '#/', 'ダッシュボード'], ['sales', '#/sales', '営業'], ['orders', '#/orders', '受発注'], ['stock', '#/stock', '在庫'], ['input', '#/input', '入力']];
-  return '<nav class="tabs">' + t.map((x) => '<a href="' + x[1] + '" class="' + (x[0] === active ? 'on' : '') + '">' + ICON[x[0]] + '<span>' + x[2] + '</span></a>').join('') + '</nav>';
+  return '<nav class="tabs"><div class="brand">今井園ポータル</div>' + t.map((x) => '<a href="' + x[1] + '" class="' + (x[0] === active ? 'on' : '') + '">' + ICON[x[0]] + '<span>' + x[2] + '</span></a>').join('') + '</nav>';
 }
 function top(title, opt) {
   opt = opt || {};
@@ -212,6 +245,8 @@ function render() {
     case 'stocktake': html = viewStocktake(r.q.get('l') || CONFIG.LOCATIONS[0]); break;
     case 'products': html = viewProducts(); break;
     case 'product-edit': html = viewProductForm(decodeURIComponent(p[1] || 'new')); break;
+    case 'suppliers': html = viewSuppliers(); break;
+    case 'supplier-edit': html = viewSupplierForm(decodeURIComponent(p[1] || 'new')); break;
     case 'input': html = viewInput(); break;
     case 'task': html = viewTask(decodeURIComponent(p[1] || '')); break;
     case 'task-edit': html = viewTaskForm(); break;
@@ -254,17 +289,18 @@ function viewDash() {
   }).join('');
 
   return top('今井園ポータル', { sub: jpDate(todayStr()), logout: true }) +
-    '<main class="view">' +
-    '<section class="kpis"><div class="kpi"><span>' + mlabel(cur) + 'の売上</span><b>' + man(vals[5]) + '</b></div><div class="kpi"><span>' + mlabel(ms[4]) + 'の売上</span><b>' + man(vals[4]) + '</b></div><div class="kpi"><span>今年度の累計</span><b>' + man(fyTotal) + '</b></div></section>' +
+    '<main class="view wide">' +
+    '<section class="kpis"><div class="kpi"><span>' + mlabel(cur) + 'の売上</span><b>' + man(vals[5]) + '</b></div><div class="kpi"><span>' + mlabel(ms[4]) + 'の売上</span><b>' + man(vals[4]) + '</b></div><div class="kpi" title="' + esc(fyLabel()) + '"><span>今年度の累計（2月〜）</span><b>' + man(fyTotal) + '</b></div></section>' +
+    '<div class="dcols"><div class="dcol">' +
     '<section class="card pad" style="display:flex;flex-direction:column;gap:10px"><div class="h2row"><h2>月別の売上</h2><span class="note">万円・請求ベース</span></div>' +
     '<div class="legend"><span><span class="sw"></span>売上</span><span class="ro">' + mlabel(ms[sel]) + '：' + man(vals[sel]) + '</span></div>' + chart + '</section>' +
     '<section class="card pad" style="display:flex;flex-direction:column;gap:8px;cursor:pointer" data-act="goorders" data-chip="unpaid"><div class="h2row"><h2>入金待ち</h2><b style="font-size:15px">' + yen(so + sn) + '</b></div>' + payBar +
     '<div class="h2row" style="font-size:12px"><span style="color:var(--red);font-weight:700">期日超過 ' + over.length + '件 ' + yen(so) + '</span><span class="muted">期日前 ' + notyet.length + '件 ' + yen(sn) + '</span></div></section>' +
-    stockWarnCard() +
+    stockWarnCard() + '</div><div class="dcol">' +
     '<section style="display:flex;flex-direction:column;gap:8px"><div class="h2row"><p class="sec-title">ネクストアクション</p><span class="note">' + acts.length + '件・期日が近い順</span></div>' +
     '<div class="card list">' + (actRows || '<div class="empty">対応が必要な作業はありません</div>') +
     (acts.length > 10 ? '<button class="more" data-act="toggleacts">' + (ui.showAllActions ? '10件だけ表示' : 'すべて表示（' + acts.length + '件）') + '</button>' : '') + '</div></section>' +
-    dashProjects() + '</main>';
+    dashProjects() + '</div></div></main>';
 }
 
 function stockWarnCard() {
@@ -286,28 +322,71 @@ function stepsHtml(o) {
   return '<div class="steps" style="grid-template-columns:repeat(4,minmax(0,1fr))">' + STEP_LABELS.map((l, i) => '<div class="' + (i < o.step ? 'done' : i === o.step ? 'cur' : '') + '"><i></i><span>' + l + '</span></div>').join('') + '</div>';
 }
 const ORDER_CHIPS = [['active', '進行中', (o) => ['unshipped', 'uninvoiced', 'unpaid'].indexOf(o.status) >= 0], ['unshipped', '出荷待ち', (o) => o.status === 'unshipped'], ['uninvoiced', '請求待ち', (o) => o.status === 'uninvoiced'], ['unpaid', '入金待ち', (o) => o.status === 'unpaid'], ['done', '完了', (o) => o.status === 'done'], ['all', 'すべて', () => true], ['cancel', 'キャンセル', (o) => o.cancel]];
+const STATUS_LABEL = { unshipped: '出荷待ち', uninvoiced: '請求待ち', unpaid: '入金待ち', done: '完了', cancel: 'キャンセル' };
+function billNote(c) { return c && c.bill ? '<span class="note billnote">帳合先 ' + esc(c.bill['取引先名']) + '</span>' : ''; }
 function orderCard(o) {
   const a = o.act; const dd = a ? due(a['期日']) : null;
   return '<div class="ocard' + (o.cancel ? ' cancelled' : '') + '" data-act="open" data-href="#/order/' + encodeURIComponent(o['受注ID']) + '">' +
-    '<div class="l1"><b>' + esc(custLabel(o.c)) + '</b><span class="note" style="flex:none">' + esc(o.no) + '・' + md(o['受注日']) + '</span></div>' +
+    '<div class="l1"><b>' + esc(custLabel(o.c)) + '</b><span class="note" style="flex:none">' + esc(o.no) + '・' + md(o['受注日']) + '</span></div>' + billNote(o.c) +
     '<div class="l2"><span>' + esc(o.summary) + '</span><b>' + money(o.total, o['通貨']) + '</b></div>' + stepsHtml(o) +
     (a ? '<div class="nextline"><span class="muted">次の作業</span><span class="due-' + (dd.cls === 'red' ? 'red' : dd.cls === 'amber' ? 'amber' : 'normal') + '">' + esc(dd.label) + '</span><span>' + esc(a['作業']) + '</span></div>' : '') + '</div>';
 }
-function orderListHtml() {
+function filteredOrders() {
   const chip = ORDER_CHIPS.find((c) => c[0] === ui.orderChip) || ORDER_CHIPS[0];
   const q = ui.orderQ.trim().toLowerCase();
   let list = D.orders.filter(chip[2]);
-  if (q) list = list.filter((o) => (custLabel(o.c) + ' ' + o.no + ' ' + o.summary).toLowerCase().indexOf(q) >= 0);
+  if (q) list = list.filter((o) => (custLabel(o.c) + ' ' + (o.c.bill ? o.c.bill['取引先名'] : '') + ' ' + o.no + ' ' + o.summary + ' ' + (o.inv ? o.inv['請求番号'] : '')).toLowerCase().indexOf(q) >= 0);
   if (['active', 'unshipped', 'uninvoiced', 'unpaid'].indexOf(chip[0]) >= 0) list.sort((a, b) => ((a.act || {})['期日'] || '9').localeCompare((b.act || {})['期日'] || '9'));
-  return list.slice(0, 150).map(orderCard).join('') || '<div class="empty">該当する受注はありません</div>';
+  return list;
+}
+const ORDER_COLS = [
+  { k: 'no', label: '受注番号', val: (o) => o.no },
+  { k: 'date', label: '受注日', val: (o) => o['受注日'] || '', html: (o) => ymd(o['受注日']) },
+  { k: 'cust', label: '取引先', val: (o) => custLabel(o.c), html: (o) => '<b>' + esc(custLabel(o.c)) + '</b>' + (o.c.bill ? '<div class="note">帳合先 ' + esc(o.c.bill['取引先名']) + '</div>' : '') },
+  { k: 'bill', label: '帳合先', val: (o) => (o.c.bill ? o.c.bill['取引先名'] : '') },
+  { k: 'sum', label: '内容', val: (o) => o.summary },
+  { k: 'amt', label: '金額', r: true, val: (o) => o.yen, html: (o) => money(o.total, o['通貨']) },
+  { k: 'st', label: '状態', val: (o) => o.step, html: (o) => '<span class="pill ' + ({ unshipped: '', uninvoiced: 'amber', unpaid: 'amber', done: 'green' }[o.status] || '') + '">' + STATUS_LABEL[o.status] + '</span>' },
+  { k: 'next', label: '次の作業', val: (o) => (o.act ? o.act['期日'] : '9'), html: (o) => { if (!o.act) return ''; const dd = due(o.act['期日']); return esc(o.act['作業']) + ' <span class="due-' + ({ red: 'red', amber: 'amber' }[dd.cls] || 'normal') + '">' + esc(dd.label) + '</span>'; } },
+  { k: 'inv', label: '請求番号', val: (o) => (o.inv ? o.inv['請求番号'] : '') }
+];
+function orderGroups(list, by) {
+  const G = {};
+  list.forEach((o) => {
+    const c = by === 'bill' ? o.billTo : o.c; const key = by === 'bill' ? (o.c.bill ? o.c['帳合先'] : o['取引先']) : o['取引先'];
+    const g = G[key] || (G[key] = { key, c, orders: [], total: 0, unpaid: 0, last: '', subs: {} });
+    g.orders.push(o); if (!o.cancel) { g.total += o.yen; if (o.status === 'unpaid') g.unpaid += o.yen; }
+    if ((o['受注日'] || '') > g.last) g.last = o['受注日'] || '';
+    if (by === 'bill' && o.c.bill) g.subs[o.c['取引先名']] = 1;
+  });
+  return Object.keys(G).map((k) => G[k]).sort((a, b) => b.last.localeCompare(a.last));
+}
+function orderListHtml() {
+  const list = filteredOrders();
+  if (ui.orderView === 'list') {
+    if (isPC()) return tableHtml('orders', ORDER_COLS, list.slice(0, 300).map((o) => Object.assign(o, { _dim: o.cancel })), (o) => '#/order/' + encodeURIComponent(o['受注ID']));
+    return list.slice(0, 150).map(orderCard).join('') || '<div class="empty">該当する受注はありません</div>';
+  }
+  const gs = orderGroups(list, ui.orderView);
+  if (!gs.length) return '<div class="empty">該当する受注はありません</div>';
+  return gs.map((g) => {
+    const open = ui.openGroup === ui.orderView + ':' + g.key;
+    const subs = Object.keys(g.subs);
+    return '<div class="grp card' + (open ? ' open' : '') + '"><button class="grp-h" data-act="ogroup" data-v="' + esc(ui.orderView + ':' + g.key) + '">' +
+      '<span class="grp-n"><b>' + esc(custLabel(g.c)) + '</b>' + (ui.orderView === 'cust' && g.c.bill ? '<span class="note">帳合先 ' + esc(g.c.bill['取引先名']) + '</span>' : '') + (subs.length ? '<span class="note">' + esc(subs.join('、')) + '</span>' : '') + '</span>' +
+      '<span class="grp-s"><span>' + g.orders.length + '件</span><b>' + yen(g.total) + '</b>' + (g.unpaid ? '<span class="due-red">未入金 ' + yen(g.unpaid) + '</span>' : '<span class="muted">未入金なし</span>') + '</span><span class="grp-x">' + (open ? '▲' : '▼') + '</span></button>' +
+      (open ? '<div class="grp-b">' + (isPC() ? tableHtml('orders', ORDER_COLS.filter((c) => c.k !== 'bill' && c.k !== 'cust' || ui.orderView === 'bill' && c.k === 'cust'), g.orders.map((o) => Object.assign(o, { _dim: o.cancel })), (o) => '#/order/' + encodeURIComponent(o['受注ID'])) : g.orders.map(orderCard).join('')) + '</div>' : '') + '</div>';
+  }).join('');
 }
 function viewOrders() {
   const chip = ORDER_CHIPS.find((c) => c[0] === ui.orderChip) || ORDER_CHIPS[0];
   const chips = ORDER_CHIPS.map((c) => '<button class="chip' + (c[0] === chip[0] ? ' on' : '') + '" data-act="ochip" data-v="' + c[0] + '">' + c[1] + ' ' + D.orders.filter(c[2]).length + '</button>').join('');
-  return top('受発注ボード') + '<main class="view" style="gap:12px">' +
-    '<div class="chips">' + chips + '</div><input class="search" type="search" placeholder="取引先・受注番号・商品で検索" value="' + esc(ui.orderQ) + '" data-input="orderQ">' +
+  const views = [['list', '一覧'], ['cust', '取引先ごと'], ['bill', '帳合先ごと']];
+  const seg = '<div class="seg light">' + views.map((v) => '<button class="' + (ui.orderView === v[0] ? 'on' : '') + '" data-act="oview" data-v="' + v[0] + '">' + v[1] + '</button>').join('') + '</div>';
+  return top('受発注ボード') + '<main class="view wide" style="gap:12px">' +
+    '<div class="chips">' + chips + '</div><div class="toolbar"><input class="search" type="search" placeholder="取引先・受注番号・商品・請求番号で検索" value="' + esc(ui.orderQ) + '" data-input="orderQ">' + seg + '</div>' +
     '<div id="olist" style="display:flex;flex-direction:column;gap:12px">' + orderListHtml() + '</div>' +
-    '<button class="btn primary" data-act="open" data-href="#/new-order">＋ 受注を登録</button></main>';
+    '<button class="btn primary narrow-btn" data-act="open" data-href="#/new-order">＋ 受注を登録</button></main>';
 }
 function viewOrder(id) {
   const o = D.orders.find((x) => x['受注ID'] === id);
@@ -320,13 +399,13 @@ function viewOrder(id) {
     if (o.status === 'uninvoiced') {
       const site = num(o.c['支払サイト日数']) || 30;
       actionHtml = '<div class="inline-form form"><b style="font-size:14px">請求を記録</b><label>請求日<input type="date" id="f_date" value="' + t + '"></label>' +
-        '<div class="note">請求書は' + (overseas ? '英語' : '日本語') + 'で作成します。支払期日は請求日の' + site + '日後になります。' + (cur === 'EUR' ? '為替レートは請求日時点のEUR/JPYを自動で記録します。' : '') + '</div>' +
+        '<div class="note">請求書PDFを' + esc(o.billTo['取引先名']) + ' 宛て（' + (overseas ? '英語' : '日本語') + '）で作り、Googleドライブに保存します。支払期日は請求日の' + site + '日後になります。' + (cur === 'EUR' ? '為替レートは請求日時点のEUR/JPYを自動で記録します。' : '') + '</div>' +
         '<button class="btn primary" data-act="invoice" data-id="' + esc(id) + '">請求を記録する</button></div>';
     }
     if (o.status === 'unpaid') actionHtml = '<div class="inline-form form"><b style="font-size:14px">入金を記録</b><div class="two"><label>入金日<input type="date" id="f_date" value="' + t + '"></label><label>入金額（' + cur + '）<input type="number" step="any" inputmode="decimal" id="f_amount" value="' + (Math.round(o.total * 100) / 100) + '"></label></div><button class="btn primary" data-act="pay" data-id="' + esc(id) + '">入金を記録する</button></div>';
   }
   const undoStep = { uninvoiced: 'ship', unpaid: 'invoice', done: 'payment' }[o.status];
-  const kv = [['取引先', '<a href="#/customer/' + encodeURIComponent(o['取引先']) + '">' + esc(custLabel(o.c)) + '</a>'], ['受注日', ymd(o['受注日'])], ['出荷元', esc(o['出荷元'])], ['出荷予定日', ymd(o['出荷予定日'])], ['出荷日', ymd(o['出荷日'])], ['追跡番号', esc(o['追跡番号'] || '—')], ['請求日', ymd(o['請求日'])]];
+  const kv = [['取引先', '<a href="#/customer/' + encodeURIComponent(o['取引先']) + '">' + esc(custLabel(o.c)) + '</a>']].concat(o.c.bill ? [['帳合先（請求書の宛先）', '<a href="#/customer/' + encodeURIComponent(o.c['帳合先']) + '">' + esc(o.c.bill['取引先名']) + '</a>']] : []).concat([ ['受注日', ymd(o['受注日'])], ['出荷元', esc(o['出荷元'])], ['出荷予定日', ymd(o['出荷予定日'])], ['出荷日', ymd(o['出荷日'])], ['追跡番号', esc(o['追跡番号'] || '—')], ['請求日', ymd(o['請求日'])]]);
   if (cur === 'EUR') kv.push(['為替レート', o['為替レート'] ? esc(o['為替レート']) + ' 円/ユーロ' : '—']);
   kv.push(['支払期日', ymd(o['支払期日'])], ['入金日', ymd(o['入金日'])], ['入金額', o['入金額'] !== '' && o['入金額'] != null ? money(o['入金額'], cur) : '—'], ['登録者', esc(o['登録者'] || '—')]);
   const lines = o.lines.map((l) => { const p = D.pMap[l['商品']] || {}; return '<tr><td>' + esc(p['商品名'] || l['商品']) + '</td><td class="r">' + qtyFmt(l['数量']) + esc(p['単位'] || '') + ' × ' + money(l['単価'], cur) + '</td><td class="r">' + money(num(l['数量']) * num(l['単価']), cur) + '</td></tr>'; }).join('');
@@ -339,6 +418,7 @@ function viewOrder(id) {
     (o.act ? '<div class="nextline"><span class="muted">次の作業</span><span class="due-' + ({ red: 'red', amber: 'amber' }[due(o.act['期日']).cls] || 'normal') + '">' + esc(due(o.act['期日']).label) + '</span><span>' + esc(o.act['作業']) + '</span></div>' : '') + '</section>' +
     (actionHtml ? '<section class="card">' + actionHtml + '</section>' : '') + editForm +
     '<section class="card"><table class="lines">' + lines + '<tr class="total"><td>合計</td><td></td><td class="r">' + money(o.total, cur) + '</td></tr></table></section>' +
+    invoiceCard(o) +
     '<section class="card kv">' + kv.map((x) => '<div><span>' + x[0] + '</span><span>' + x[1] + '</span></div>').join('') + '</section>' +
     (o['メモ'] ? '<section class="card memo">' + esc(o['メモ']) + '</section>' : '') +
     '<div class="btns">' + (ui.edit ? '' : '<button class="btn ghost" data-act="editon">内容を編集</button>') + (undoStep && !o.cancel ? '<button class="btn ghost" data-act="undo" data-id="' + esc(id) + '" data-step="' + undoStep + '">直前の工程を取り消す</button>' : '') +
@@ -347,6 +427,43 @@ function viewOrder(id) {
     '</main>';
 }
 
+function invoiceCard(o) {
+  if (!o['請求日'] || o.cancel && !o.inv) return '';
+  const invs = D.invByOrder[o['受注ID']] || [];
+  if (!invs.length) return '<section class="card pad form" style="gap:10px"><div class="h2row"><b style="font-size:14px">請求書</b><span class="note">まだ作っていません</span></div>' +
+    '<div class="note">宛先：' + esc(o.billTo['取引先名']) + '（' + (o.c['国'] && o.c['国'] !== 'JP' ? '英語' : '日本語') + '）</div>' +
+    '<button class="btn primary" data-act="invissue" data-id="' + esc(o['受注ID']) + '">請求書PDFを作る</button></section>';
+  const v = invs[0]; const cur = v['通貨'] || 'JPY';
+  const old = invs.slice(1).map((x) => '<button class="linkbtn" data-act="invpdf" data-id="' + esc(x['請求書ID']) + '">第' + esc(x['版']) + '版（' + esc(x['作成日時']) + '）</button>').join('、');
+  return '<section class="card pad form" style="gap:10px"><div class="h2row"><b style="font-size:14px">請求書 ' + esc(v['請求番号']) + (num(v['版']) > 1 ? '（第' + esc(v['版']) + '版）' : '') + '</b><b>' + money(v['合計'], cur) + '</b></div>' +
+    '<div class="note">宛先 ' + esc(v['宛先']) + '・' + (v['言語'] === 'en' ? '英語' : '日本語') + '・作成 ' + esc(v['作成日時']) + (v['作成者'] ? '（' + esc(v['作成者']) + '）' : '') + '</div>' +
+    (v['言語'] !== 'en' ? '<div class="note">小計 8% ' + yen(v['小計8']) + '・10% ' + yen(v['小計10']) + '／消費税 8% ' + yen(v['消費税8']) + '・10% ' + yen(v['消費税10']) + '</div>' : '') +
+    '<div class="btns"><button class="btn primary" data-act="invpdf" data-id="' + esc(v['請求書ID']) + '">PDFを開く</button><button class="btn" data-act="invmail" data-id="' + esc(v['請求書ID']) + '">Gmailの下書きを作る</button></div>' +
+    '<button class="btn ghost" data-act="invissue" data-id="' + esc(o['受注ID']) + '" data-re="1">内容を直して作り直す（第' + (num(v['版']) + 1) + '版）</button>' +
+    (old ? '<div class="note">以前の版：' + old + '</div>' : '') + '</section>';
+}
+async function openInvoicePdf(id) {
+  // iPhone では await の後に新しいタブを開けないため、先に空のタブを開いておく
+  const w = window.open('', '_blank');
+  if (w) w.document.write('<p style="font-family:sans-serif;padding:24px">請求書を読み込んでいます…</p>');
+  busy(true, '請求書を読み込んでいます…');
+  try {
+    const r = await api('getInvoicePdf', { id });
+    const bin = atob(r.base64); const bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+    busy(false);
+    if (w) w.location.href = url;
+    else { const a = document.createElement('a'); a.href = url; a.download = r.name || 'invoice.pdf'; document.body.appendChild(a); a.click(); a.remove(); }
+  } catch (e) { busy(false); if (w) w.close(); if (e.message !== 'auth') alert(e.message); }
+}
+async function draftInvoiceMail(id) {
+  if (!confirm('この請求書を添付したGmailの下書きを作ります（送信はしません）')) return;
+  busy(true, '下書きを作っています…');
+  try {
+    const r = await api('draftInvoiceMail', { id }); busy(false);
+    alert('Gmailの下書きを作りました。' + (r.to ? '宛先：' + r.to : '取引先のメールアドレスが未登録のため、宛先は空です。') + '\nポータルの管理アカウントのGmailで、内容を確認してから送信してください。');
+  } catch (e) { busy(false); if (e.message !== 'auth') alert(e.message); }
+}
 function shipStockNote(o) {
   const loc = o['出荷元'];
   const need = {}; o.lines.forEach((l) => { if (isStockItem(D.pMap[l['商品']])) need[l['商品']] = (need[l['商品']] || 0) + num(l['数量']); });
@@ -452,18 +569,49 @@ function custStats(c) {
   const fy = fyStart(); const os = D.orders.filter((o) => o['取引先'] === c['取引先ID'] && !o.cancel);
   return { fy: os.filter((o) => o['請求日'] && o['請求日'].slice(0, 7) >= fy).reduce((s, o) => s + o.yen, 0), unpaid: os.filter((o) => o.status === 'unpaid').reduce((s, o) => s + o.yen, 0), last: os.reduce((m, o) => (o['受注日'] > m ? o['受注日'] : m), ''), n: os.length };
 }
-function custListHtml() {
+function billParents() { const ids = {}; D.customers.forEach((c) => { if (c.bill) ids[c['帳合先']] = 1; }); return Object.keys(ids).map((k) => D.cMap[k]).sort((a, b) => (a['取引先名'] || '').localeCompare(b['取引先名'] || '', 'ja')); }
+function filteredCustomers() {
   const q = ui.custQ.trim().toLowerCase();
   let list = D.customers.filter((c) => ui.custChip === 'all' || (phaseOf(c) || 'その他') === ui.custChip);
-  if (q) list = list.filter((c) => ((c['取引先名'] || '') + ' ' + (c['国'] || '') + ' ' + (c['メモ'] || '')).toLowerCase().indexOf(q) >= 0);
-  const withStats = list.map((c) => ({ c, s: custStats(c) })).sort((a, b) => (b.s.last || '').localeCompare(a.s.last || '') || (a.c['取引先名'] || '').localeCompare(b.c['取引先名'] || '', 'ja'));
-  const cards = withStats.map(({ c, s }) => {
-    const ph = phaseOf(c); const m = /現状: ([^\n]+)/.exec(c['メモ'] || '');
-    return '<div class="ocard" data-act="open" data-href="#/customer/' + encodeURIComponent(c['取引先ID']) + '"><div class="l1"><b>' + esc(custLabel(c)) + '</b>' + (ph ? '<span class="badge">' + esc(ph) + '</span>' : '') + '</div>' +
-      (m ? '<span class="note" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(m[1]) + '</span>' : '') +
-      '<div class="stat"><span>今年度 <b>' + man(s.fy) + '</b></span>' + (s.unpaid ? '<span>入金待ち <b style="color:var(--red)">' + yen(s.unpaid) + '</b></span>' : '') + (s.last ? '<span>最終受注 <b>' + md(s.last) + '</b></span>' : '') + '</div></div>';
-  }).join('');
-  return cards || '<div class="empty">該当する取引先はありません</div>';
+  if (ui.custBill === '__none') list = list.filter((c) => !c.bill);
+  else if (ui.custBill === '__has') list = list.filter((c) => c.bill);
+  else if (ui.custBill) list = list.filter((c) => c['帳合先'] === ui.custBill || c['取引先ID'] === ui.custBill);
+  if (q) list = list.filter((c) => ((c['取引先名'] || '') + ' ' + (c.bill ? c.bill['取引先名'] : '') + ' ' + (c['国'] || '') + ' ' + (c['メモ'] || '')).toLowerCase().indexOf(q) >= 0);
+  return list.map((c) => ({ c, s: custStats(c) })).sort((a, b) => (b.s.last || '').localeCompare(a.s.last || '') || (a.c['取引先名'] || '').localeCompare(b.c['取引先名'] || '', 'ja'));
+}
+function custCard(c, s) {
+  const ph = phaseOf(c); const m = /現状: ([^\n]+)/.exec(c['メモ'] || '');
+  return '<div class="ocard" data-act="open" data-href="#/customer/' + encodeURIComponent(c['取引先ID']) + '"><div class="l1"><b>' + esc(custLabel(c)) + '</b>' + (ph ? '<span class="badge">' + esc(ph) + '</span>' : '') + '</div>' + billNote(c) +
+    (m ? '<span class="note" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(m[1]) + '</span>' : '') +
+    '<div class="stat"><span>今年度 <b>' + man(s.fy) + '</b></span>' + (s.unpaid ? '<span>入金待ち <b style="color:var(--red)">' + yen(s.unpaid) + '</b></span>' : '') + (s.last ? '<span>最終受注 <b>' + md(s.last) + '</b></span>' : '') + '</div></div>';
+}
+const CUST_COLS = [
+  { k: 'name', label: '取引先名', val: (x) => x.c['取引先名'] || '', html: (x) => '<b>' + esc(custLabel(x.c)) + '</b>' },
+  { k: 'bill', label: '帳合先', val: (x) => (x.c.bill ? x.c.bill['取引先名'] : '') },
+  { k: 'phase', label: 'フェーズ', val: (x) => phaseOf(x.c) },
+  { k: 'kind', label: '区分', val: (x) => x.c['区分'] || '' },
+  { k: 'fy', label: '今年度の売上', r: true, val: (x) => x.s.fy, html: (x) => (x.s.fy ? yen(x.s.fy) : '—') },
+  { k: 'unpaid', label: '入金待ち', r: true, val: (x) => x.s.unpaid, html: (x) => (x.s.unpaid ? '<span class="due-red">' + yen(x.s.unpaid) + '</span>' : '—') },
+  { k: 'n', label: '受注', r: true, val: (x) => x.s.n, html: (x) => x.s.n + '件' },
+  { k: 'last', label: '最終受注', val: (x) => x.s.last || '', html: (x) => ymd(x.s.last) }
+];
+function custListHtml() {
+  const list = filteredCustomers();
+  const href = (x) => '#/customer/' + encodeURIComponent(x.c['取引先ID']);
+  if (ui.custView === 'bill') {
+    // 帳合先ごと：帳合先の下に、その帳合先を通す取引先を並べる
+    const byParent = {}; const roots = [];
+    list.forEach((x) => { if (x.c.bill) (byParent[x.c['帳合先']] = byParent[x.c['帳合先']] || []).push(x); else roots.push(x); });
+    Object.keys(byParent).forEach((pid) => { if (!roots.some((x) => x.c['取引先ID'] === pid)) roots.push({ c: D.cMap[pid], s: custStats(D.cMap[pid]), _ghost: true }); });
+    const parents = roots.filter((x) => byParent[x.c['取引先ID']]).sort((a, b) => (a.c['取引先名'] || '').localeCompare(b.c['取引先名'] || '', 'ja'));
+    const singles = roots.filter((x) => !byParent[x.c['取引先ID']] && !x._ghost);
+    const block = (x) => { const kids = byParent[x.c['取引先ID']]; const tot = kids.reduce((s, k) => s + k.s.fy, x.s.fy);
+      return '<div class="grp card open"><a class="grp-h" href="' + href(x) + '"><span class="grp-n"><span class="note">帳合先</span><b>' + esc(custLabel(x.c)) + '</b></span><span class="grp-s"><span>' + kids.length + '店舗</span><b>今年度 ' + man(tot) + '</b></span></a>' +
+        '<div class="grp-b">' + (isPC() ? tableHtml('cust', CUST_COLS.filter((c) => c.k !== 'bill'), kids, href) : kids.map((k) => custCard(k.c, k.s)).join('')) + '</div></div>'; };
+    return parents.map(block).join('') + (singles.length ? '<p class="sec-title" style="margin-top:4px">帳合先のない取引先</p>' + (isPC() ? tableHtml('cust', CUST_COLS.filter((c) => c.k !== 'bill'), singles, href) : singles.map((x) => custCard(x.c, x.s)).join('')) : '') || '<div class="empty">該当する取引先はありません</div>';
+  }
+  if (isPC()) return tableHtml('cust', CUST_COLS, list, href);
+  return list.map((x) => custCard(x.c, x.s)).join('') || '<div class="empty">該当する取引先はありません</div>';
 }
 const PHASES = ['取引中', '商談中', 'パイプライン', '失注'];
 function salesSeg() {
@@ -474,9 +622,13 @@ function viewSales() {
   const phases = {}; D.customers.forEach((c) => { const p = phaseOf(c) || 'その他'; phases[p] = (phases[p] || 0) + 1; });
   const order = PHASES.concat(['その他']);
   const chipDefs = [['all', 'すべて', D.customers.length]].concat(order.filter((p) => phases[p]).map((p) => [p, p, phases[p]]));
-  return top('営業ボード', { extra: salesSeg() }) + '<main class="view" style="gap:12px"><div class="chips">' + chipDefs.map((x) => '<button class="chip' + (ui.custChip === x[0] ? ' on' : '') + '" data-act="cchip" data-v="' + esc(x[0]) + '">' + esc(x[1]) + ' ' + x[2] + '</button>').join('') + '</div>' +
-    '<input class="search" type="search" placeholder="取引先名・国・メモで検索" value="' + esc(ui.custQ) + '" data-input="custQ"><div id="clist" style="display:flex;flex-direction:column;gap:12px">' + custListHtml() + '</div>' +
-    '<button class="btn primary" data-act="open" data-href="#/customer-edit/new">＋ 取引先・リードを追加</button></main>';
+  return top('営業ボード', { extra: salesSeg() }) + '<main class="view wide" style="gap:12px"><div class="chips">' + chipDefs.map((x) => '<button class="chip' + (ui.custChip === x[0] ? ' on' : '') + '" data-act="cchip" data-v="' + esc(x[0]) + '">' + esc(x[1]) + ' ' + x[2] + '</button>').join('') + '</div>' +
+    '<div class="toolbar"><input class="search" type="search" placeholder="取引先名・帳合先・国・メモで検索" value="' + esc(ui.custQ) + '" data-input="custQ">' +
+    '<select class="search" id="cust_bill" aria-label="帳合先で絞り込み"><option value="">帳合先：すべて</option><option value="__has"' + (ui.custBill === '__has' ? ' selected' : '') + '>帳合先あり</option><option value="__none"' + (ui.custBill === '__none' ? ' selected' : '') + '>帳合先なし</option>' +
+    billParents().map((b) => '<option value="' + esc(b['取引先ID']) + '"' + (ui.custBill === b['取引先ID'] ? ' selected' : '') + '>' + esc(b['取引先名']) + ' の取引先</option>').join('') + '</select>' +
+    '<div class="seg light"><button class="' + (ui.custView === 'list' ? 'on' : '') + '" data-act="cview" data-v="list">一覧</button><button class="' + (ui.custView === 'bill' ? 'on' : '') + '" data-act="cview" data-v="bill">帳合先ごと</button></div></div>' +
+    '<div id="clist" style="display:flex;flex-direction:column;gap:12px">' + custListHtml() + '</div>' +
+    '<button class="btn primary narrow-btn" data-act="open" data-href="#/customer-edit/new">＋ 取引先・リードを追加</button></main>';
 }
 
 /* ---------- プロジェクト ---------- */
@@ -518,14 +670,16 @@ function viewCustomer(id) {
   const c = D.cMap[id];
   if (!c) return top('取引先', { back: true }) + '<main class="view"><div class="empty">取引先が見つかりません</div></main>';
   const s = custStats(c); const os = D.orders.filter((o) => o['取引先'] === id);
-  const kv = [['国', c['国']], ['区分', c['区分']], ['担当者', c['担当者名']], ['メール', c['メール'] ? '<a href="mailto:' + esc(c['メール']) + '">' + esc(c['メール']) + '</a>' : ''], ['電話', c['電話'] ? '<a href="tel:' + esc(c['電話']) + '">' + esc(c['電話']) + '</a>' : ''], ['住所', c['住所']], ['通貨', c['通貨']], ['支払サイト', (c['支払サイト日数'] || 30) + '日'], ['請求書', c['国'] && c['国'] !== 'JP' ? '英語' : '日本語']];
+  const kids = D.customers.filter((x) => x['帳合先'] === id && x.bill);
+  const kv = [['帳合先', c.bill ? '<a href="#/customer/' + encodeURIComponent(c['帳合先']) + '">' + esc(c.bill['取引先名']) + '</a>' : ''], ['請求書の宛先', c.bill ? c.bill['取引先名'] + '（帳合先）' : ''], ['国', c['国']], ['区分', c['区分']], ['担当者', c['担当者名']], ['メール', c['メール'] ? '<a href="mailto:' + esc(c['メール']) + '">' + esc(c['メール']) + '</a>' : ''], ['電話', c['電話'] ? '<a href="tel:' + esc(c['電話']) + '">' + esc(c['電話']) + '</a>' : ''], ['住所', c['住所']], ['通貨', c['通貨']], ['支払サイト', (c['支払サイト日数'] || 30) + '日'], ['請求書', c['国'] && c['国'] !== 'JP' ? '英語' : '日本語']];
   return top(c['取引先名'] || '取引先', { back: true }) + '<main class="view" style="gap:12px">' +
     '<section class="kpis"><div class="kpi"><span>今年度の売上</span><b>' + man(s.fy) + '</b></div><div class="kpi"><span>入金待ち</span><b' + (s.unpaid ? ' style="color:var(--red)"' : '') + '>' + yen(s.unpaid) + '</b></div><div class="kpi"><span>受注件数</span><b>' + s.n + '件</b></div></section>' +
     '<div class="btns"><button class="btn primary" data-act="open" data-href="#/new-order?c=' + encodeURIComponent(id) + '">受注を登録</button><button class="btn" data-act="open" data-href="#/customer-edit/' + encodeURIComponent(id) + '">情報を編集</button></div>' +
     '<section class="card kv">' + kv.filter((x) => x[1]).map((x) => '<div><span>' + x[0] + '</span><span>' + (String(x[1]).indexOf('<a ') === 0 ? x[1] : esc(x[1])) + '</span></div>').join('') + '</section>' +
     (c['メモ'] ? '<section class="card memo">' + esc(c['メモ']) + '</section>' : '') +
+    (kids.length ? '<p class="sec-title">この取引先を帳合先にしている取引先（' + kids.length + '件）</p><div class="card list">' + kids.map((k) => '<a class="row" href="#/customer/' + encodeURIComponent(k['取引先ID']) + '"><span class="c" style="color:var(--ink)">' + esc(custLabel(k)) + '</span><span class="note" style="flex:none">今年度 ' + man(custStats(k).fy) + '</span></a>').join('') + '</div>' : '') +
     '<p class="sec-title">受注（' + os.length + '件）</p>' + (os.slice(0, 50).map(orderCard).join('') || '<div class="empty">まだ受注はありません</div>') +
-    (os.length ? '<div class="note">受注がある取引先は削除できません。先に受注を削除してください。</div>' : '<button class="btn danger" data-act="delcust" data-id="' + esc(id) + '">この取引先を削除</button>') + '</main>';
+    (os.length ? '<div class="note">受注がある取引先は削除できません。先に受注を削除してください。</div>' : kids.length ? '<div class="note">帳合先として使われている取引先は削除できません。</div>' : '<button class="btn danger" data-act="delcust" data-id="' + esc(id) + '">この取引先を削除</button>') + '</main>';
 }
 const COUNTRIES = ['JP', 'AT', 'DE', 'NL', 'IT', 'FR', 'CZ', 'SK', 'SI', 'HU', 'GB', 'US', 'AE', 'DO'];
 function viewCustomerForm(id, phase) {
@@ -534,6 +688,8 @@ function viewCustomerForm(id, phase) {
   const ctry = COUNTRIES.indexOf(c['国']) < 0 && c['国'] ? COUNTRIES.concat([c['国']]) : COUNTRIES;
   return top(id === 'new' ? '取引先を追加' : '取引先を編集', { back: true }) + '<main class="view" style="gap:12px"><section class="card pad form" id="cform">' + f('取引先名', '取引先名') +
     '<div class="two"><label>国<select data-f="国" id="cf_country">' + ctry.map((x) => '<option' + (x === c['国'] ? ' selected' : '') + '>' + x + '</option>').join('') + '</select></label><label>通貨<select data-f="通貨" id="cf_cur">' + ['JPY', 'EUR'].map((x) => '<option' + (x === c['通貨'] ? ' selected' : '') + '>' + x + '</option>').join('') + '</select></label></div>' +
+    '<label>帳合先（請求書の宛先。ない場合は空欄）<select data-f="帳合先"><option value="">なし（この取引先に直接請求）</option>' +
+    D.customers.filter((x) => x['取引先ID'] !== id && !x.bill).sort((a, b) => (a['取引先名'] || '').localeCompare(b['取引先名'] || '', 'ja')).map((x) => '<option value="' + esc(x['取引先ID']) + '"' + (x['取引先ID'] === (c['帳合先'] || '') ? ' selected' : '') + '>' + esc(custLabel(x)) + '</option>').join('') + '</select></label>' +
     '<label>営業のフェーズ<select data-f="フェーズ">' + [''].concat(PHASES).map((x) => '<option value="' + x + '"' + (x === (c['フェーズ'] || '') ? ' selected' : '') + '>' + (x || '未設定') + '</option>').join('') + '</select></label>' +
     '<div class="two"><label>区分<select data-f="区分">' + ['', 'カフェ', '卸', '小売', 'その他'].map((x) => '<option value="' + x + '"' + (x === (c['区分'] || '') ? ' selected' : '') + '>' + (x || '未設定') + '</option>').join('') + '</select></label>' + f('支払サイト日数', '支払サイト（日）', 'number') + '</div>' +
     f('担当者名', '先方の担当者') + '<div class="two">' + f('メール', 'メール', 'email') + f('電話', '電話', 'tel') + '</div>' + f('住所', '住所') +
@@ -548,6 +704,10 @@ function priceLabel(p) {
   return a.length ? a.join('・') + (p['単位'] ? ' /' + esc(p['単位']) : '') : '未設定';
 }
 function lotText(l) { return (l.lot ? 'ロット ' + l.lot : 'ロットなし') + (l.exp ? '・賞味期限 ' + ymd(l.exp) : ''); }
+function costLine(g) {
+  const u = g.p['単位'] || '';
+  return (g.sup ? esc(g.sup['仕入先名']) : '仕入先未設定') + '・' + (g.unit ? '単価 ' + yen(g.unit) + (u ? '/' + esc(u) : '') : '単価未設定') + (g.value ? '・在庫金額 ' + yen(g.value) : '');
+}
 function stockCard(g, showLoc) {
   const u = g.p['単位'] || '';
   const alerts = [];
@@ -555,13 +715,37 @@ function stockCard(g, showLoc) {
   g.expiring.forEach((l) => { const dd = dayDiff(l.exp); alerts.push('<span class="alert red">' + (l.lot ? 'ロット ' + esc(l.lot) + '：' : '') + (dd < 0 ? '賞味期限切れ' : '賞味期限まで' + dd + '日') + '・優先販売の検討</span>'); });
   return '<div class="ocard" data-act="open" data-href="#/stock-item/' + encodeURIComponent(g.pid) + '">' +
     '<div class="l1"><b>' + esc(g.p['商品名']) + '</b><b style="font-size:18px' + (g.qty <= 0 ? ';color:var(--red)' : '') + '">' + qtyFmt(g.qty) + ' ' + esc(u) + '</b></div>' +
-    '<div class="note">' + (showLoc ? esc(g.loc) + (g.lotList.length ? '・' : '') : '') + g.lotList.map((l) => esc(lotText(l)) + (g.lotList.length > 1 ? '（' + qtyFmt(l.qty) + u + '）' : '')).join('、') + '</div>' + alerts.join('') + '</div>';
+    '<div class="note">' + (showLoc ? esc(g.loc) + (g.lotList.length ? '・' : '') : '') + g.lotList.map((l) => esc(lotText(l)) + (g.lotList.length > 1 ? '（' + qtyFmt(l.qty) + u + '）' : '')).join('、') + '</div>' +
+    '<div class="note">' + costLine(g) + '</div>' + alerts.join('') + '</div>';
 }
-function stockListHtml() {
+function filteredStock() {
   const q = ui.stockQ.trim().toLowerCase();
   let gs = D.stock.filter((g) => (ui.stockLoc === 'all' || g.loc === ui.stockLoc) && (g.qty !== 0 || g.safe > 0));
-  if (q) gs = gs.filter((g) => (g.p['商品名'] || '').toLowerCase().indexOf(q) >= 0);
+  if (q) gs = gs.filter((g) => ((g.p['商品名'] || '') + ' ' + (g.sup ? g.sup['仕入先名'] : '')).toLowerCase().indexOf(q) >= 0);
   gs.sort((a, b) => ((b.low || b.expiring.length ? 1 : 0) - (a.low || a.expiring.length ? 1 : 0)) || (a.p['商品名'] || '').localeCompare(b.p['商品名'] || '', 'ja') || a.loc.localeCompare(b.loc));
+  return gs;
+}
+const STOCK_COLS = [
+  { k: 'name', label: '商品', val: (g) => g.p['商品名'] || '', html: (g) => '<b>' + esc(g.p['商品名']) + '</b>' },
+  { k: 'loc', label: '拠点', val: (g) => g.loc },
+  { k: 'sup', label: '仕入先', val: (g) => (g.sup ? g.sup['仕入先名'] : '') },
+  { k: 'qty', label: '数量', r: true, val: (g) => g.qty, html: (g) => '<b' + (g.qty <= 0 ? ' class="due-red"' : '') + '>' + qtyFmt(g.qty) + '</b> ' + esc(g.p['単位'] || '') },
+  { k: 'unit', label: '仕入単価', r: true, val: (g) => g.unit || 0, html: (g) => (g.unit ? yen(g.unit) : '—') },
+  { k: 'value', label: '在庫金額', r: true, val: (g) => g.value, html: (g) => (g.value ? yen(g.value) : '—') },
+  { k: 'lots', label: 'ロット・賞味期限', val: (g) => (g.lotList[0] || {}).exp || '9', html: (g) => g.lotList.map((l) => esc(lotText(l)) + (g.lotList.length > 1 ? '（' + qtyFmt(l.qty) + '）' : '')).join('<br>') },
+  { k: 'alert', label: '確認', val: (g) => (g.low ? 0 : 1) + (g.expiring.length ? 0 : 1), html: (g) => (g.low ? '<span class="pill amber">安全在庫割れ</span> ' : '') + (g.expiring.length ? '<span class="pill red">期限90日以内</span>' : '') }
+];
+function stockListHtml() {
+  const gs = filteredStock(); const href = (g) => '#/stock-item/' + encodeURIComponent(g.pid);
+  if (ui.stockGroup === 'sup') {
+    const G = {};
+    gs.forEach((g) => { const k = g.sup ? g.sup['仕入先ID'] : ''; (G[k] = G[k] || { sup: g.sup, list: [], value: 0 }).list.push(g); G[k].value += g.value; });
+    const keys = Object.keys(G).sort((a, b) => (a === '' ? 1 : 0) - (b === '' ? 1 : 0) || G[b].value - G[a].value);
+    return keys.map((k) => { const x = G[k];
+      return '<div class="grp card open"><div class="grp-h"><span class="grp-n"><b>' + (x.sup ? esc(x.sup['仕入先名']) : '仕入先が未設定の商品') + '</b>' + (x.sup && x.sup['支払条件'] ? '<span class="note">支払条件 ' + esc(x.sup['支払条件']) + '</span>' : '') + '</span><span class="grp-s"><span>' + x.list.length + '件</span><b>在庫金額 ' + yen(x.value) + '</b></span></div>' +
+        '<div class="grp-b">' + (isPC() ? tableHtml('stock', STOCK_COLS.filter((c) => c.k !== 'sup'), x.list, href) : x.list.map((g) => stockCard(g, ui.stockLoc === 'all')).join('')) + '</div></div>'; }).join('') || '<div class="empty">在庫はありません</div>';
+  }
+  if (isPC()) return tableHtml('stock', STOCK_COLS, gs, href);
   return gs.map((g) => stockCard(g, ui.stockLoc === 'all')).join('') || '<div class="empty">在庫はありません</div>';
 }
 function viewStock() {
@@ -569,11 +753,16 @@ function viewStock() {
   const seg = '<div class="seg">' + locs.map((l) => '<button class="' + (ui.stockLoc === l ? 'on' : '') + '" data-act="sloc" data-v="' + esc(l) + '">' + (l === 'all' ? '全拠点' : esc(l)) + '</button>').join('') + '</div>';
   const inLoc = D.stock.filter((g) => ui.stockLoc === 'all' || g.loc === ui.stockLoc);
   const low = inLoc.filter((g) => g.low).length, exp = inLoc.reduce((n, g) => n + g.expiring.length, 0);
-  return top('在庫管理', { extra: seg }) + '<main class="view" style="gap:12px">' +
-    '<div class="two-cards"><div class="kpi" style="background:var(--amber-ll)"><span>安全在庫を下回る</span><b style="color:var(--amber)">' + low + '品目</b></div><div class="kpi" style="background:var(--red-bg)"><span>賞味期限まで90日以内</span><b style="color:var(--red)">' + exp + 'ロット</b></div></div>' +
+  const value = inLoc.reduce((s, g) => s + g.value, 0);
+  const noCost = inLoc.filter((g) => g.qty > 0 && !g.unit).length;
+  return top('在庫管理', { extra: seg }) + '<main class="view wide" style="gap:12px">' +
+    '<div class="kpis"><div class="kpi"><span>在庫金額（仕入単価）</span><b>' + yen(value) + '</b></div><div class="kpi" style="background:var(--amber-ll)"><span>安全在庫を下回る</span><b style="color:var(--amber)">' + low + '品目</b></div><div class="kpi" style="background:var(--red-bg)"><span>賞味期限90日以内</span><b style="color:var(--red)">' + exp + 'ロット</b></div></div>' +
+    (noCost ? '<div class="note">仕入単価が未設定の在庫が ' + noCost + '件あり、在庫金額に含まれていません。商品マスタで設定できます。</div>' : '') +
     '<div class="tiles four"><button class="tile" data-act="open" data-href="#/stock-op/in">入庫</button><button class="tile" data-act="open" data-href="#/stock-op/out">出庫</button><button class="tile" data-act="open" data-href="#/stock-op/move">在庫移動</button><button class="tile" data-act="open" data-href="#/stocktake' + (ui.stockLoc !== 'all' ? '?l=' + encodeURIComponent(ui.stockLoc) : '') + '">棚卸</button></div>' +
-    '<input class="search" type="search" placeholder="商品名で検索" value="' + esc(ui.stockQ) + '" data-input="stockQ"><div id="slist" style="display:flex;flex-direction:column;gap:12px">' + stockListHtml() + '</div>' +
-    '<a class="btn ghost" href="#/products">商品マスタ（' + D.products.length + '件）</a></main>';
+    '<div class="toolbar"><input class="search" type="search" placeholder="商品名・仕入先で検索" value="' + esc(ui.stockQ) + '" data-input="stockQ">' +
+    '<div class="seg light"><button class="' + (ui.stockGroup === 'list' ? 'on' : '') + '" data-act="sgroup" data-v="list">一覧</button><button class="' + (ui.stockGroup === 'sup' ? 'on' : '') + '" data-act="sgroup" data-v="sup">仕入先ごと</button></div></div>' +
+    '<div id="slist" style="display:flex;flex-direction:column;gap:12px">' + stockListHtml() + '</div>' +
+    '<div class="btns narrow-btn"><a class="btn ghost" href="#/products">商品マスタ（' + D.products.length + '件）</a><a class="btn ghost" href="#/suppliers">仕入先マスタ（' + D.suppliers.length + '件）</a></div></main>';
 }
 function viewStockItem(pid) {
   const p = D.pMap[pid];
@@ -583,14 +772,15 @@ function viewStockItem(pid) {
   const locCards = CONFIG.LOCATIONS.map((loc) => {
     const g = D.sMap[pid + '|' + loc] || { qty: 0, safe: 0, lotList: [], low: false, expiring: [] };
     return '<section class="card pad" style="display:flex;flex-direction:column;gap:8px"><div class="h2row"><b>' + esc(loc) + '</b><b style="font-size:17px' + (g.low ? ';color:var(--amber)' : '') + '">' + qtyFmt(g.qty) + ' ' + esc(u) + '</b></div>' +
-      (g.lotList.length ? g.lotList.map((l) => '<div class="h2row note"><span>' + esc(lotText(l)) + '</span><span>' + qtyFmt(l.qty) + u + '</span></div>').join('') : '') +
+      (g.lotList.length ? g.lotList.map((l) => '<div class="h2row note"><span>' + esc(lotText(l)) + (l.cost != null ? '・単価 ' + yen(l.cost) : '') + '</span><span>' + qtyFmt(l.qty) + u + '</span></div>').join('') : '') +
       '<div class="form" style="gap:6px"><div class="safe-row"><span class="note">安全在庫</span><input type="number" step="any" inputmode="decimal" id="safe_' + esc(loc) + '" value="' + (g.safe || '') + '" placeholder="未設定"><span class="note">' + esc(u) + '</span><button class="btn ghost" style="min-height:40px" data-act="savesafe" data-id="' + esc(pid) + '" data-loc="' + esc(loc) + '">保存</button></div></div></section>';
   }).join('');
   const hist = D.movements.filter((m) => m['商品'] === pid).slice().sort((a, b) => (b['日付'] || '').localeCompare(a['日付'] || '') || String(b['移動ID']).localeCompare(String(a['移動ID']))).slice(0, 40);
   const histRows = hist.map((m) => { const q = num(m['数量']); return '<div class="hist"><div><b>' + esc(m['種別']) + '</b>　' + esc(m['拠点']) + (m['ロット'] ? '・' + esc(m['ロット']) : '') + '<div class="note">' + md(m['日付']) + (m['メモ'] ? '　' + esc(m['メモ']) : '') + '</div></div><span class="' + (q < 0 ? 'neg' : 'pos') + '">' + (q > 0 ? '+' : '') + qtyFmt(q) + u + '</span><button class="x" data-act="delmove" data-id="' + esc(m['移動ID']) + '" aria-label="この記録を削除">×</button></div>'; }).join('');
   const q = '?p=' + encodeURIComponent(pid);
   return top(p['商品名'], { back: true }) + '<main class="view" style="gap:12px">' +
-    '<section class="kpis" style="grid-template-columns:1fr"><div class="kpi"><span>全拠点の合計</span><b>' + qtyFmt(total) + ' ' + esc(u) + '</b></div></section>' +
+    '<section class="kpis"><div class="kpi"><span>全拠点の合計</span><b>' + qtyFmt(total) + ' ' + esc(u) + '</b></div><div class="kpi"><span>在庫金額</span><b>' + yen(D.stock.filter((g) => g.pid === pid).reduce((s, g) => s + g.value, 0)) + '</b></div><div class="kpi"><span>標準の仕入単価</span><b>' + (costOf(p) != null ? yen(costOf(p)) : '未設定') + '</b></div></section>' +
+    '<div class="note">仕入先：' + (supName(p['仕入先']) ? '<a href="#/supplier-edit/' + encodeURIComponent(p['仕入先']) + '">' + esc(supName(p['仕入先'])) + '</a>' : '未設定') + '。入庫のときに入れた単価はロットごとに記録し、在庫金額はその単価で計算します（単価がないロットは標準の仕入単価で計算）。</div>' +
     '<div class="tiles"><button class="tile" data-act="open" data-href="#/stock-op/in' + q + '">入庫</button><button class="tile" data-act="open" data-href="#/stock-op/out' + q + '">出庫</button><button class="tile" data-act="open" data-href="#/stock-op/move' + q + '">在庫移動</button><button class="tile" data-act="open" data-href="#/product-edit/' + encodeURIComponent(pid) + '">商品の情報</button></div>' +
     locCards + '<p class="sec-title">入出庫の記録</p><div class="card">' + (histRows || '<div class="empty">記録はありません</div>') + '</div>' +
     '<div class="note">間違えて登録した記録は × で削除できます。在庫移動は、移動元と移動先の両方の記録が消えます。</div></main>';
@@ -605,7 +795,7 @@ function viewStockOp(kind, q) {
   let body = prodSel;
   if (kind === 'in') body += '<div class="two">' + locSel('so_loc', '入庫先', loc) + '<label>数量<input id="so_qty" type="number" step="any" inputmode="decimal"></label></div>' +
     '<div class="two"><label>ロット（任意）<input id="so_lot" placeholder="例：2611-A"></label><label>賞味期限（任意）<input id="so_exp" type="date"></label></div>' +
-    '<label>入庫日<input id="so_date" type="date" value="' + todayStr() + '"></label><label>メモ（任意）<input id="so_memo" placeholder="例：堀口園から仕入"></label>';
+    '<div class="two"><label>仕入単価（円、税抜）<input id="so_cost" type="number" step="any" inputmode="decimal" placeholder="標準の仕入単価"></label><label>入庫日<input id="so_date" type="date" value="' + todayStr() + '"></label></div><label>メモ（任意）<input id="so_memo" placeholder="例：堀口園から仕入"></label>';
   if (kind === 'out') body += '<div class="two">' + locSel('so_loc', '出庫元', loc) + '<label>数量<input id="so_qty" type="number" step="any" inputmode="decimal"></label></div>' +
     '<label>ロット<select id="so_lot"></select></label><label>理由・メモ<input id="so_memo" placeholder="例：サンプル送付、自店で使用"></label>';
   if (kind === 'move') body += '<div class="two">' + locSel('so_loc', '移動元', loc) + locSel('so_to', '移動先', CONFIG.LOCATIONS.find((l) => l !== loc)) + '</div>' +
@@ -625,6 +815,8 @@ function updStockOp() {
     if (had && [...lotSel.options].some((o) => o.value === cur)) lotSel.value = cur;
   }
   document.querySelectorAll('#so_qty').forEach((e) => { e.placeholder = u; });
+  const ce = document.getElementById('so_cost');
+  if (ce && (ce.value === '' || ce.dataset.auto === '1')) { const c = costOf(D.pMap[pid]); ce.value = c != null ? c : ''; ce.dataset.auto = '1'; }
   const info = document.getElementById('so_info');
   if (!pid) { info.innerHTML = '<span>商品を選ぶと、今の在庫が表示されます。</span>'; return; }
   const line = (l) => { const x = D.sMap[pid + '|' + l]; return esc(l) + '　' + qtyFmt(x ? x.qty : 0) + u + (x && x.safe ? '（安全在庫 ' + qtyFmt(x.safe) + u + '）' : ''); };
@@ -634,7 +826,7 @@ async function saveStockOp(kind) {
   const base = { productId: val('so_p'), qty: val('so_qty'), memo: val('so_memo') };
   if (!base.productId || !(num(base.qty) > 0)) { alert('商品と数量を入力してください'); return; }
   let action, payload;
-  if (kind === 'in') { action = 'stockIn'; payload = Object.assign(base, { location: val('so_loc'), lot: val('so_lot').trim(), expiry: val('so_exp'), date: val('so_date') }); }
+  if (kind === 'in') { action = 'stockIn'; payload = Object.assign(base, { location: val('so_loc'), lot: val('so_lot').trim(), expiry: val('so_exp'), date: val('so_date'), cost: val('so_cost') }); }
   if (kind === 'out') { action = 'stockOut'; payload = Object.assign(base, { location: val('so_loc'), lot: val('so_lot') }); }
   if (kind === 'move') {
     if (val('so_loc') === val('so_to')) { alert('移動元と移動先が同じです'); return; }
@@ -665,21 +857,44 @@ async function saveStocktake() {
 }
 function viewProducts() {
   const ps = D.products.slice().sort((a, b) => (a['商品名'] || '').localeCompare(b['商品名'] || '', 'ja'));
-  const rows = ps.map((p) => '<a class="row" href="#/product-edit/' + encodeURIComponent(p['商品ID']) + '"' + (truthy(p['販売中']) ? '' : ' style="opacity:.5"') + '><span class="c" style="color:var(--ink);font-weight:500">' + esc(p['商品名']) + '</span><span class="note" style="flex:none">' +
+  const rows = ps.map((p) => '<a class="row" href="#/product-edit/' + encodeURIComponent(p['商品ID']) + '"' + (truthy(p['販売中']) ? '' : ' style="opacity:.5"') + '><span class="c" style="color:var(--ink);font-weight:500">' + esc(p['商品名']) +
+    '<span class="note" style="display:block;font-weight:400">' + (supName(p['仕入先']) ? esc(supName(p['仕入先'])) : '仕入先未設定') + (costOf(p) != null ? '・仕入 ' + yen(costOf(p)) : '') + '・税率' + (num(p['税率']) === 10 ? '10%' : '8%') + '</span></span><span class="note" style="flex:none">' +
     priceLabel(p) + '</span></a>').join('');
   return top('商品マスタ', { back: true }) + '<main class="view" style="gap:12px">' +
-    '<div class="h2row"><p class="sec-title">商品（' + ps.length + '件）</p><span class="note">標準単価</span></div><div class="card list">' + rows + '</div>' +
+    '<div class="h2row"><p class="sec-title">商品（' + ps.length + '件）</p><span class="note">標準の販売単価</span></div><div class="card list">' + rows + '</div>' +
     '<button class="btn primary" data-act="open" data-href="#/product-edit/new">＋ 商品を追加</button></main>';
 }
 function viewProductForm(id) {
-  const p = id === 'new' ? { '単位': 'kg', '販売中': true } : (D.pMap[id] || {});
+  const p = id === 'new' ? { '単位': 'kg', '販売中': true, '税率': 8 } : (D.pMap[id] || {});
   const f = (k, label, type) => '<label>' + label + '<input data-f="' + k + '" type="' + (type || 'text') + '"' + (type === 'number' ? ' step="any" inputmode="decimal"' : '') + ' value="' + esc(p[k]) + '"></label>';
+  const sups = D.suppliers.slice().sort((a, b) => (a['仕入先名'] || '').localeCompare(b['仕入先名'] || '', 'ja'));
   return top(id === 'new' ? '商品を追加' : '商品を編集', { back: true }) + '<main class="view" style="gap:12px"><section class="card pad form" id="pform">' + f('商品名', '商品名') + f('英語の商品名', '英語の商品名（英語の請求書用）') +
-    '<label>単位<select data-f="単位">' + ['kg', '個', '袋'].map((x) => '<option' + (x === p['単位'] ? ' selected' : '') + '>' + x + '</option>').join('') + '</select></label>' +
-    '<div class="two">' + f('標準単価（円）', '標準単価（円）', 'number') + f('標準単価（ユーロ）', '標準単価（ユーロ）', 'number') + '</div>' +
+    '<div class="two"><label>単位<select data-f="単位">' + ['kg', '個', '袋'].map((x) => '<option' + (x === p['単位'] ? ' selected' : '') + '>' + x + '</option>').join('') + '</select></label>' +
+    '<label>消費税率<select data-f="税率"><option value="8"' + (num(p['税率']) !== 10 ? ' selected' : '') + '>8%（軽減税率・飲食料品）</option><option value="10"' + (num(p['税率']) === 10 ? ' selected' : '') + '>10%（サービス・配送料など）</option></select></label></div>' +
+    '<div class="two">' + f('標準単価（円）', '標準の販売単価（円、税抜）', 'number') + f('標準単価（ユーロ）', '標準の販売単価（ユーロ）', 'number') + '</div>' +
+    '<div class="two"><label>仕入先<select data-f="仕入先"><option value="">未設定</option>' + sups.map((x) => '<option value="' + esc(x['仕入先ID']) + '"' + (x['仕入先ID'] === p['仕入先'] ? ' selected' : '') + '>' + esc(x['仕入先名']) + '</option>').join('') + '</select></label>' + f('仕入単価', '標準の仕入単価（円、税抜）', 'number') + '</div>' +
     '<label class="check"><input type="checkbox" data-f="販売中"' + (truthy(p['販売中']) ? ' checked' : '') + '>販売中</label>' +
-    '<label class="check"><input type="checkbox" data-f="在庫管理"' + (id === 'new' || isStockItem(p) ? ' checked' : '') + '>在庫を管理する（サービスや配送料は外す）</label></section><button class="btn primary" data-act="saveprod" data-id="' + esc(id) + '">保存する</button>' +
+    '<label class="check"><input type="checkbox" data-f="在庫管理"' + (id === 'new' || isStockItem(p) ? ' checked' : '') + '>在庫を管理する（サービスや配送料は外す）</label></section>' +
+    '<div class="note">輸出（海外の取引先）の請求書は免税になるため、税率の設定は国内の請求書だけに使います。</div><button class="btn primary" data-act="saveprod" data-id="' + esc(id) + '">保存する</button>' +
     (id !== 'new' ? '<button class="btn danger" data-act="delprod" data-id="' + esc(id) + '">この商品を削除</button>' : '') + '</main>';
+}
+function viewSuppliers() {
+  const val2 = {}; D.stock.forEach((g) => { const k = g.p['仕入先'] || ''; val2[k] = (val2[k] || 0) + g.value; });
+  const cnt = {}; D.products.forEach((p) => { const k = p['仕入先'] || ''; cnt[k] = (cnt[k] || 0) + 1; });
+  const rows = D.suppliers.slice().sort((a, b) => (a['仕入先名'] || '').localeCompare(b['仕入先名'] || '', 'ja')).map((x) => '<a class="row" href="#/supplier-edit/' + encodeURIComponent(x['仕入先ID']) + '"><span class="c" style="color:var(--ink);font-weight:500">' + esc(x['仕入先名']) +
+    '<span class="note" style="display:block;font-weight:400">商品 ' + (cnt[x['仕入先ID']] || 0) + '件' + (x['支払条件'] ? '・' + esc(x['支払条件']) : '') + (x['担当者名'] ? '・' + esc(x['担当者名']) : '') + '</span></span><span class="note" style="flex:none">在庫金額 ' + yen(val2[x['仕入先ID']] || 0) + '</span></a>').join('');
+  return top('仕入先マスタ', { back: true }) + '<main class="view" style="gap:12px"><div class="card list">' + (rows || '<div class="empty">仕入先はまだありません</div>') + '</div>' +
+    '<button class="btn primary" data-act="open" data-href="#/supplier-edit/new">＋ 仕入先を追加</button></main>';
+}
+function viewSupplierForm(id) {
+  const x = id === 'new' ? {} : (D.supMap[id] || {});
+  const f = (k, label, type) => '<label>' + label + '<input data-f="' + k + '" type="' + (type || 'text') + '" value="' + esc(x[k]) + '"></label>';
+  const ps = D.products.filter((p) => p['仕入先'] === id);
+  return top(id === 'new' ? '仕入先を追加' : '仕入先を編集', { back: true }) + '<main class="view" style="gap:12px"><section class="card pad form" id="supform">' + f('仕入先名', '仕入先名') + f('担当者名', '担当者') +
+    '<div class="two">' + f('電話', '電話', 'tel') + f('メール', 'メール', 'email') + '</div>' + f('住所', '住所') + f('支払条件', '支払条件（例：月末締め翌月末払い）') +
+    '<label>メモ<textarea data-f="メモ">' + esc(x['メモ']) + '</textarea></label></section><button class="btn primary" data-act="savesup" data-id="' + esc(id) + '">保存する</button>' +
+    (id !== 'new' ? '<p class="sec-title">この仕入先の商品（' + ps.length + '件）</p><div class="card list">' + (ps.map((p) => '<a class="row" href="#/product-edit/' + encodeURIComponent(p['商品ID']) + '"><span class="c" style="color:var(--ink)">' + esc(p['商品名']) + '</span><span class="note" style="flex:none">' + (costOf(p) != null ? '仕入 ' + yen(costOf(p)) : '仕入単価未設定') + '</span></a>').join('') || '<div class="empty">まだありません</div>') + '</div>' +
+      (ps.length ? '<div class="note">商品がある仕入先は削除できません。</div>' : '<button class="btn danger" data-act="delsup" data-id="' + esc(id) + '">この仕入先を削除</button>') : '') + '</main>';
 }
 
 /* ================= 入力 ================= */
@@ -700,7 +915,7 @@ function viewInput() {
     '<button class="tile" data-act="open" data-href="#/stock-op/in">入庫</button><button class="tile" data-act="open" data-href="#/stock-op/out">出庫</button>' +
     '<button class="tile" data-act="open" data-href="#/stock-op/move">在庫移動</button><button class="tile" data-act="open" data-href="#/stocktake">棚卸</button></div></section>' +
     '<section style="display:flex;flex-direction:column;gap:8px"><p class="note" style="margin:0">マスタ</p><div class="tiles">' +
-    '<button class="tile" data-act="open" data-href="#/customer-edit/new">取引先を追加</button><button class="tile" data-act="open" data-href="#/product-edit/new">商品を追加</button></div></section>' +
+    '<button class="tile" data-act="open" data-href="#/customer-edit/new">取引先を追加</button><button class="tile" data-act="open" data-href="#/product-edit/new">商品を追加</button><button class="tile" data-act="open" data-href="#/supplier-edit/new">仕入先を追加</button><button class="tile" data-act="open" data-href="#/suppliers">仕入先マスタ</button></div></section>' +
     '<section style="display:flex;flex-direction:column;gap:8px"><p class="note" style="margin:0">その他</p><div class="tiles">' +
     '<button class="tile" data-act="open" data-href="#/task-edit/new">タスクを追加<small>未完了 ' + tasks + '件</small></button></div></section>' +
     '<section style="display:flex;flex-direction:column;gap:8px"><p class="note" style="margin:0">最近の受注</p><div class="card list">' + recent + '</div></section></main>';
@@ -753,7 +968,15 @@ document.addEventListener('click', async (ev) => {
     case 'editon': ui.edit = true; render(); break;
     case 'editoff': ui.edit = false; render(); break;
     case 'ship': await write('recordShip', { id, date: val('f_date'), tracking: val('f_track') }, '出荷を記録しました'); break;
-    case 'invoice': await write('recordInvoice', { id, date: val('f_date') }, '請求を記録しました'); break;
+    case 'invoice': await write('recordInvoice', { id, date: val('f_date') }, '請求を記録し、請求書PDFを作りました', '請求書を作っています…'); break;
+    case 'invissue': if (!el.dataset.re || confirm('今の受注の内容で請求書を作り直します。請求番号は同じで、版が1つ上がります')) await write('issueInvoice', { id }, '請求書PDFを作りました', '請求書を作っています…'); break;
+    case 'invpdf': await openInvoicePdf(id); break;
+    case 'invmail': await draftInvoiceMail(id); break;
+    case 'cview': ui.custView = el.dataset.v; render(); break;
+    case 'sgroup': ui.stockGroup = el.dataset.v; render(); break;
+    case 'oview': ui.orderView = el.dataset.v; ui.openGroup = ''; render(); break;
+    case 'ogroup': ui.openGroup = ui.openGroup === el.dataset.v ? '' : el.dataset.v; document.getElementById('olist').innerHTML = orderListHtml(); break;
+    case 'sort': { const st = ui.sort[el.dataset.t]; if (st.k === el.dataset.k) st.dir = -st.dir; else { st.k = el.dataset.k; st.dir = 1; } render(); break; }
     case 'pay': await write('recordPayment', { id, date: val('f_date'), amount: val('f_amount') }, '入金を記録しました'); break;
     case 'undo': if (confirm('直前の工程の記録を取り消しますか')) await write('undoStep', { id, step: el.dataset.step }, '取り消しました'); break;
     case 'cancel': if (confirm(el.dataset.v === '1' ? 'この受注をキャンセルにしますか' : 'キャンセルを取り消しますか')) await write('updateOrder', { id, fields: { 'キャンセル': el.dataset.v === '1' } }, '更新しました'); break;
@@ -762,6 +985,8 @@ document.addEventListener('click', async (ev) => {
     case 'rmline': { const w = document.getElementById('of_lines'); if (w.children.length > 1) el.closest('.line-item').remove(); updOrderForm(); break; }
     case 'createorder': await createOrder(); break;
     case 'savecust': { const v = formVals('#cform'); if (!v['取引先名']) { alert('取引先名を入力してください'); break; } if (id !== 'new') v['取引先ID'] = id; const before = new Set(D.customers.map((c) => c['取引先ID'])); if (await write('saveCustomer', v, '保存しました')) { const n = id !== 'new' ? D.cMap[id] : D.customers.find((c) => !before.has(c['取引先ID'])); go(n ? '#/customer/' + encodeURIComponent(n['取引先ID']) : '#/sales'); } break; }
+    case 'savesup': { const v = formVals('#supform'); if (!v['仕入先名']) { alert('仕入先名を入力してください'); break; } if (id !== 'new') v['仕入先ID'] = id; if (await write('saveSupplier', v, '保存しました')) go('#/suppliers'); break; }
+    case 'delsup': if (confirm('この仕入先を削除しますか。元に戻せません')) { if (await write('deleteSupplier', { id }, '削除しました')) go('#/suppliers'); } break;
     case 'saveprod': { const v = formVals('#pform'); if (!v['商品名']) { alert('商品名を入力してください'); break; } if (id !== 'new') v['商品ID'] = id; if (await write('saveProduct', v, '保存しました')) go('#/products'); break; }
     case 'savetask': { const v = formVals('#tform'); if (!v['作業'] || !v['期日']) { alert('作業と期日を入力してください'); break; } if (await write('saveTask', v, 'タスクを登録しました')) go('#/'); break; }
     case 'donetask': if (await write('completeTask', { id }, '完了にしました')) go('#/'); break;
@@ -785,7 +1010,9 @@ document.addEventListener('input', (ev) => {
 });
 document.addEventListener('change', (ev) => {
   const t = ev.target;
+  if (t.id === 'so_cost') { t.dataset.auto = '0'; return; }
   if (t.id === 'so_p' || t.id === 'so_loc') { updStockOp(); return; }
+  if (t.id === 'cust_bill') { ui.custBill = t.value; document.getElementById('clist').innerHTML = custListHtml(); return; }
   if (t.id === 'tk_loc') { go('#/stocktake?l=' + encodeURIComponent(t.value)); return; }
   if (t.id === 'of_c') onCustChange();
   else if (t.classList && t.classList.contains('l_p')) { setLinePrice(t.closest('.line-item')); updOrderForm(); }
