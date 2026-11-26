@@ -258,7 +258,99 @@ function render() {
 }
 
 /* ================= ダッシュボード ================= */
+function isOverseas(o) { return (o.c['国'] && o.c['国'] !== 'JP') || o['通貨'] === 'EUR'; }
+function salesSplit() { const r = {}; D.orders.forEach((o) => { if (!o.cancel && o['請求日']) { const k = o['請求日'].slice(0, 7); const x = r[k] || (r[k] = { jp: 0, os: 0 }); if (isOverseas(o)) x.os += o.yen; else x.jp += o.yen; } }); return r; }
+function shiftMonth(k, n) { let y = +k.slice(0, 4), m = +k.slice(5, 7) + n; while (m < 1) { m += 12; y--; } while (m > 12) { m -= 12; y++; } return y + '-' + String(m).padStart(2, '0'); }
+function pctLabel(cur, prev, label) { if (!prev) return '前年のデータはありません'; const p = Math.round((cur / prev - 1) * 100); return label + ' <span class="' + (p >= 0 ? 'up' : 'down') + '">' + (p >= 0 ? '+' : '') + p + '%</span>'; }
+function shortageOf(o) {
+  const loc = o['出荷元']; const need = {};
+  o.lines.forEach((l) => { if (isStockItem(D.pMap[l['商品']])) need[l['商品']] = (need[l['商品']] || 0) + num(l['数量']); });
+  return Object.keys(need).filter((pid) => { const g = D.sMap[pid + '|' + loc]; return (g ? g.qty : 0) < need[pid]; });
+}
+function viewDashPC() {
+  const t = todayStr(); const cur = t.slice(0, 7); const sp = salesSplit(); const tot = (k) => (sp[k] ? sp[k].jp + sp[k].os : 0);
+  const fy0 = fyStart(); const months = []; for (let i = 0; i < 12; i++) months.push(shiftMonth(fy0, i));
+  let fyCur = 0, fyPrev = 0; months.forEach((k) => { if (k <= cur) { fyCur += tot(k); fyPrev += tot(shiftMonth(k, -12)); } });
+  const unpaid = D.orders.filter((o) => o.status === 'unpaid');
+  const over = unpaid.filter((o) => o['支払期日'] && dayDiff(o['支払期日']) < 0);
+  const sum = (a) => a.reduce((x, o) => x + o.yen, 0);
+  const oldest = over.reduce((m, o) => Math.max(m, -dayDiff(o['支払期日'])), 0);
+  const stockValue = D.stock.reduce((x, g) => x + g.value, 0); const low = D.stock.filter((g) => g.low).length;
+  const cnt = (st) => D.orders.filter((o) => o.status === st).length;
+  const kpi = (label, value, sub, cls, href) => '<a class="kpi kpi-l' + (cls ? ' ' + cls : '') + '"' + (href ? ' href="' + href + '"' : '') + '><span>' + label + '</span><b>' + value + '</b><small>' + sub + '</small></a>';
+  const kpis = '<section class="kpis six">' +
+    kpi((+cur.slice(5)) + '月の売上', man(tot(cur)), pctLabel(tot(cur), tot(shiftMonth(cur, -12)), '前年同月比')) +
+    kpi('今年度の累計', man(fyCur), pctLabel(fyCur, fyPrev, '前年度の同じ時期と比べて')) +
+    kpi('入金待ち', yen(sum(unpaid)), unpaid.length + '件', '', '#/orders" data-act="goorders" data-chip="unpaid') +
+    kpi('うち期日超過', yen(sum(over)), over.length + '件' + (oldest ? '・最長 ' + oldest + '日超過' : ''), over.length ? 'warn-red' : '', '#/orders" data-act="goorders" data-chip="unpaid') +
+    kpi('在庫金額', yen(stockValue), low ? '安全在庫割れ ' + low + '品目' : '安全在庫割れなし', low ? 'warn-amber' : '', '#/stock" data-act="stockwarn') +
+    kpi('進行中の受注', (cnt('unshipped') + cnt('uninvoiced') + cnt('unpaid')) + '件', '出荷待ち ' + cnt('unshipped') + '・請求待ち ' + cnt('uninvoiced') + '・入金待ち ' + cnt('unpaid'), '', '#/orders" data-act="goorders" data-chip="active') + '</section>';
+
+  // B：会計年度の月別売上（国内と海外の積み上げ、前年度の同じ月を線で表示）
+  const vals = months.map((k) => ({ k, jp: sp[k] ? sp[k].jp : 0, os: sp[k] ? sp[k].os : 0, prev: tot(shiftMonth(k, -12)), future: k > cur }));
+  const maxV = Math.max(1, ...vals.map((v) => Math.max(v.jp + v.os, v.prev)));
+  const step = [10, 20, 30, 50, 75, 100, 150, 200, 300, 500, 750, 1000, 1500, 2000, 3000, 5000].map((x) => x * 10000).find((x) => x * 4 >= maxV) || Math.ceil(maxV / 4);
+  const top4 = step * 4, H = 200, hpx = (v) => Math.round(v / top4 * H);
+  const selK = ui.fySel && months.indexOf(ui.fySel) >= 0 ? ui.fySel : (cur >= months[0] && cur <= months[11] ? cur : months[0]);
+  const cols = vals.map((v) => {
+    const total = v.jp + v.os; const hj = hpx(v.jp), ho = hpx(v.os);
+    return '<button class="fycol' + (v.k === selK ? ' sel' : '') + (v.future ? ' future' : '') + '" data-act="fymonth" data-k="' + v.k + '" aria-label="' + (+v.k.slice(5)) + '月 国内' + man(v.jp) + ' 海外' + man(v.os) + '">' +
+      '<span class="stack">' + (ho ? '<i class="os' + '" style="height:' + ho + 'px"></i>' : '') + (hj ? '<i class="jp' + (ho ? '' : ' cap') + '" style="height:' + hj + 'px"></i>' : '') + '</span>' +
+      (v.prev ? '<em class="prev" style="bottom:' + hpx(v.prev) + 'px"></em>' : '') + '</button>';
+  }).join('');
+  const chart = '<section class="card pad fychart"><div class="h2row"><h2>月別の売上　' + fyStart().slice(0, 4) + '年度（2月〜翌1月）</h2><span class="note">万円・請求ベース</span></div>' +
+    '<div class="legend"><span><span class="sw jp"></span>国内</span><span><span class="sw os"></span>海外</span><span><span class="sw prevsw"></span>前年度の同じ月</span><span class="ro" id="fyread">' + fyReadout(vals.find((v) => v.k === selK)) + '</span></div>' +
+    '<div class="chart big"><div class="yax" style="height:' + H + 'px">' + [4, 3, 2, 1, 0].map((i) => '<span>' + Math.round(step * i / 10000).toLocaleString('ja-JP') + '</span>').join('') + '</div>' +
+    '<div style="flex:1;display:flex;flex-direction:column"><div class="plot" style="height:' + H + 'px">' + [0, 25, 50, 75].map((p) => '<div class="grid" style="top:' + p + '%"></div>').join('') + cols + '</div>' +
+    '<div class="xl" style="grid-template-columns:repeat(12,minmax(0,1fr))">' + months.map((k) => '<span class="' + (k === selK ? 'sel' : '') + (k > cur ? ' muted2' : '') + '">' + (+k.slice(5)) + '月</span>').join('') + '</div></div></div>' +
+    '<div class="note">今年度の国内 ' + man(vals.reduce((x, v) => x + v.jp, 0)) + '・海外 ' + man(vals.reduce((x, v) => x + v.os, 0)) + '。ユーロの売上は請求日の為替レートで円に換算しています。</div></section>';
+  ui._fyVals = vals;
+
+  // D：入金待ちを経過日数で分ける
+  const buckets = [['期日前', (d) => d >= 0, ''], ['1〜30日超過', (d) => d < 0 && d >= -30, 'amber'], ['31〜60日超過', (d) => d < -30 && d >= -60, 'red'], ['61日以上超過', (d) => d < -60, 'red']];
+  const allU = sum(unpaid) || 1;
+  const aging = buckets.map((b) => {
+    const os = unpaid.filter((o) => b[1](o['支払期日'] ? dayDiff(o['支払期日']) : 0));
+    const by = {}; os.forEach((o) => { const k = o.billTo['取引先名'] || ''; const x = by[k] || (by[k] = { name: k, yen: 0, n: 0, days: 0, id: o['受注ID'] }); x.yen += o.yen; x.n++; const dd = o['支払期日'] ? -dayDiff(o['支払期日']) : 0; if (dd >= x.days) { x.days = dd; x.id = o['受注ID']; } });
+    const list = Object.keys(by).map((k) => by[k]).sort((a, c) => c.yen - a.yen);
+    const amt = sum(os);
+    return '<div class="age"><div class="age-h"><span class="pill ' + b[2] + '">' + b[0] + '</span><b>' + yen(amt) + '</b><span class="note">' + os.length + '件</span></div>' +
+      '<div class="age-bar"><i class="' + b[2] + '" style="width:' + Math.round(amt / allU * 100) + '%"></i></div>' +
+      (list.length ? '<div class="age-list">' + list.slice(0, 4).map((x) => '<a href="#/order/' + encodeURIComponent(x.id) + '"><span>' + esc(x.name) + (x.n > 1 ? '（' + x.n + '件）' : '') + '</span><span>' + yen(x.yen) + '</span></a>').join('') + (list.length > 4 ? '<span class="note">ほか ' + (list.length - 4) + '社</span>' : '') + '</div>' : '') + '</div>';
+  }).join('');
+  const agingCard = '<section class="card pad" style="display:flex;flex-direction:column;gap:12px"><div class="h2row"><h2>入金待ち（期日からの経過）</h2><a class="note" href="#/orders" data-act="goorders" data-chip="unpaid">受注を見る</a></div>' + aging + '</section>';
+
+  // E：今週と来週の出荷予定
+  const dow = (() => { const a = t.split('-'); return new Date(+a[0], +a[1] - 1, +a[2]).getDay(); })();
+  const sunday = addDays(t, (7 - dow) % 7), nextSunday = addDays(sunday, 7);
+  const ship = D.orders.filter((o) => o.status === 'unshipped');
+  const grp = [['予定日を過ぎた受注', (o) => o['出荷予定日'] && o['出荷予定日'] < t], ['今週（' + md(t) + '〜' + md(sunday) + '）', (o) => o['出荷予定日'] >= t && o['出荷予定日'] <= sunday], ['来週（' + md(addDays(sunday, 1)) + '〜' + md(nextSunday) + '）', (o) => o['出荷予定日'] > sunday && o['出荷予定日'] <= nextSunday], ['予定日が未設定', (o) => !o['出荷予定日']]];
+  const shipRows = grp.map((g) => {
+    const os = ship.filter(g[1]).sort((a, b) => (a['出荷予定日'] || '').localeCompare(b['出荷予定日'] || ''));
+    if (!os.length) return '';
+    return '<p class="note ship-g">' + g[0] + '　' + os.length + '件</p>' + os.map((o) => { const sh = shortageOf(o);
+      return '<a class="row ship-r" href="#/order/' + encodeURIComponent(o['受注ID']) + '"><span class="t">' + (o['出荷予定日'] ? md(o['出荷予定日']) + '（' + WEEK[new Date(o['出荷予定日'].replace(/-/g, '/')).getDay()] + '）' : '—') + '</span><span class="c">' + esc(custLabel(o.c)) + '・' + esc(o.summary) + '</span><span class="pill">' + esc(o['出荷元'] || '') + '</span>' + (sh.length ? '<span class="pill amber" title="出荷元の在庫が足りません">在庫不足</span>' : '') + '</a>'; }).join('');
+  }).join('');
+  const later = ship.filter((o) => o['出荷予定日'] > nextSunday).length;
+  const shipCard = '<section style="display:flex;flex-direction:column;gap:8px"><div class="h2row"><p class="sec-title">出荷の予定</p><span class="note">出荷待ち ' + ship.length + '件' + (later ? '（再来週以降 ' + later + '件）' : '') + '</span></div><div class="card list">' + (shipRows || '<div class="empty">今週と来週に出荷する受注はありません</div>') + '</div></section>';
+
+  const acts = D.actions.concat(D.stockActs || []).sort((a, b) => (a['期日'] || '9').localeCompare(b['期日'] || '9'));
+  const showN = ui.showAllActions ? acts.length : Math.min(acts.length, 10);
+  const actRows = acts.slice(0, showN).map((a) => {
+    const dd = a.label ? { cls: a.cls, label: a.label, over: a.over } : due(a['期日']);
+    const href = a.href ? a.href : a['種類'] === '受注' ? '#/order/' + encodeURIComponent(a['参照ID']) : '#/task/' + encodeURIComponent(a['参照ID']);
+    return '<a class="row' + (dd.over ? ' over' : '') + '" href="' + href + '"><span class="t">' + esc(a['作業']) + '</span><span class="c">' + esc(a['案件名']) + '</span><span class="pill ' + dd.cls + '">' + esc(dd.label) + '</span></a>';
+  }).join('');
+  const actCard = '<section style="display:flex;flex-direction:column;gap:8px"><div class="h2row"><p class="sec-title">ネクストアクション</p><span class="note">' + acts.length + '件・期日が近い順</span></div>' +
+    '<div class="card list">' + (actRows || '<div class="empty">対応が必要な作業はありません</div>') +
+    (acts.length > 10 ? '<button class="more" data-act="toggleacts">' + (ui.showAllActions ? '10件だけ表示' : 'すべて表示（' + acts.length + '件）') + '</button>' : '') + '</div></section>';
+
+  return top('今井園ポータル', { sub: jpDate(t), logout: true }) + '<main class="view wide dashpc">' + kpis +
+    '<div class="dgrid2"><div class="dcol2">' + chart + actCard + '</div><div class="dcol2">' + agingCard + shipCard + stockWarnCard() + dashProjects() + '</div></div></main>';
+}
+function fyReadout(v) { if (!v) return ''; return (+v.k.slice(5)) + '月：' + (v.future ? 'これから' : '国内 ' + man(v.jp) + '・海外 ' + man(v.os) + '・計 ' + man(v.jp + v.os) + '（前年度 ' + (v.prev ? man(v.prev) : 'なし') + '）'); }
 function viewDash() {
+  if (isPC()) return viewDashPC();
   const sm = salesByMonth(); const ms = monthsBack(6); const cur = ms[5];
   const fy = fyStart(); let fyTotal = 0; Object.keys(sm).forEach((k) => { if (k >= fy && k <= cur) fyTotal += sm[k]; });
   const mlabel = (k) => (+k.slice(5)) + '月';
@@ -948,6 +1040,7 @@ document.addEventListener('click', async (ev) => {
     case 'reload': await refresh(true); break;
     case 'logout': logout(); break;
     case 'selmonth': ui.sel = +el.dataset.i; render(); break;
+    case 'fymonth': ui.fySel = el.dataset.k; render(); break;
     case 'toggleacts': ui.showAllActions = !ui.showAllActions; render(); break;
     case 'goorders': ui.orderChip = el.dataset.chip; ui.orderQ = ''; go('#/orders'); break;
     case 'ochip': ui.orderChip = el.dataset.v; render(); break;
@@ -993,6 +1086,16 @@ document.addEventListener('click', async (ev) => {
   }
 });
 function val(id) { const e = document.getElementById(id); return e ? e.value : ''; }
+document.addEventListener('mouseover', (ev) => {
+  const c = ev.target.closest && ev.target.closest('.fycol'); const r = document.getElementById('fyread');
+  if (!c || !r || !ui._fyVals) return;
+  r.textContent = fyReadout(ui._fyVals.find((v) => v.k === c.dataset.k));
+});
+document.addEventListener('mouseout', (ev) => {
+  const c = ev.target.closest && ev.target.closest('.fychart'); const r = document.getElementById('fyread');
+  if (!c || !r || !ui._fyVals || (ev.relatedTarget && c.contains(ev.relatedTarget))) return;
+  const sel = document.querySelector('.fycol.sel'); r.textContent = fyReadout(ui._fyVals.find((v) => sel && v.k === sel.dataset.k));
+});
 document.addEventListener('input', (ev) => {
   const t = ev.target;
   if (t.dataset && t.dataset.input) {
