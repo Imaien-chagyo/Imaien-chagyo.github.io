@@ -274,6 +274,8 @@ a.kpi[href]:hover{box-shadow:0 0 0 2px var(--green-ll) inset}
 .bom-row .b_amt{white-space:nowrap;text-align:right}
 @media (max-width:520px){.bom-row{grid-template-columns:28px minmax(0,1fr) 32px}.bom-row .bq{grid-column:2}.bom-row .b_amt{grid-column:2;text-align:left}.bom-row .x{grid-row:1;grid-column:3}}
 #bom_sum{flex-wrap:wrap}
+.sup-origin{margin-left:10px;font-size:13px;font-weight:500;color:var(--green-d)}
+.sup-origin.empty{font-size:11px;font-weight:400;color:var(--muted2)}
 .movebox summary{cursor:pointer;font-size:14px;font-weight:700;color:var(--ink2)}
 @media (min-width:1024px){
   .kpis.six{grid-template-columns:repeat(6,minmax(0,1fr));gap:12px}

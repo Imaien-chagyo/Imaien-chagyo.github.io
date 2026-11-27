@@ -1245,7 +1245,7 @@ function viewMaterialForm(id) {
 function viewSuppliers() {
   const val2 = {}; D.stock.forEach((g) => { const k = g.p['仕入先'] || ''; val2[k] = (val2[k] || 0) + g.value; });
   const cnt = {}; D.products.forEach((p) => { const k = p['仕入先'] || ''; cnt[k] = (cnt[k] || 0) + 1; });
-  const rows = D.suppliers.slice().sort((a, b) => (a['仕入先名'] || '').localeCompare(b['仕入先名'] || '', 'ja')).map((x) => '<a class="row" href="#/supplier-edit/' + encodeURIComponent(x['仕入先ID']) + '"><span class="c" style="color:var(--ink);font-weight:500">' + esc(x['仕入先名']) + (x['産地'] ? '<span class="tag">' + esc(x['産地']) + '</span>' : '') +
+  const rows = D.suppliers.slice().sort((a, b) => (a['仕入先名'] || '').localeCompare(b['仕入先名'] || '', 'ja')).map((x) => '<a class="row" href="#/supplier-edit/' + encodeURIComponent(x['仕入先ID']) + '"><span class="c" style="color:var(--ink);font-weight:500">' + esc(x['仕入先名']) + '<span class="sup-origin' + (x['産地'] ? '' : ' empty') + '">' + (x['産地'] ? esc(x['産地']) : '産地 未入力') + '</span>' +
     '<span class="note" style="display:block;font-weight:400">商品 ' + (cnt[x['仕入先ID']] || 0) + '件' + (x['支払条件'] ? '・' + esc(x['支払条件']) : '') + (x['担当者名'] ? '・' + esc(x['担当者名']) : '') + '</span></span><span class="note" style="flex:none">在庫金額 ' + yen(val2[x['仕入先ID']] || 0) + '</span></a>').join('');
   return top('仕入先マスタ', { back: true }) + '<main class="view" style="gap:12px"><div class="card list">' + (rows || '<div class="empty">仕入先はまだありません</div>') + '</div>' +
     '<button class="btn primary" data-act="open" data-href="#/supplier-edit/new">＋ 仕入先を追加</button></main>';
