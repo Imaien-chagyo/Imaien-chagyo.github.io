@@ -109,7 +109,7 @@ async function write(action, payload, okMsg, busyText) {
 }
 
 /* ================= データ加工 ================= */
-function setData(raw) {
+function setData(raw, silent) {
   localStorage.setItem('ip_data', JSON.stringify(raw));
   const d = raw;
   d.cMap = {}; d.customers.forEach((c) => { d.cMap[c['取引先ID']] = c; });
@@ -145,7 +145,9 @@ function setData(raw) {
   D = d;
   buildStock(d);
   buildPurchases(d);
-  render();
+  d.materials = d.materials || []; d.boms = d.boms || []; d.matMap = {}; d.materials.forEach((m) => { d.matMap[m['資材ID']] = m; });
+  d.bomBy = {}; d.boms.forEach((b) => { (d.bomBy[b['商品']] = d.bomBy[b['商品']] || []).push(b); });
+  if (!silent) render();
 }
 /* 発注：発注、入荷、支払 */
 function buildPurchases(d) {
@@ -218,7 +220,8 @@ function payFields(cur, days, prefix) {
   return '<div class="two"><label>支払条件<select ' + prefix + '="支払条件" id="' + (prefix === 'data-f' ? 'cf_pay' : 'nc_pay') + '"><option value=""' + (cur !== '日数指定' ? ' selected' : '') + '>翌月末払い（請求日の翌月末）</option><option value="日数指定"' + (cur === '日数指定' ? ' selected' : '') + '>請求日から日数で決める</option></select></label>' +
     '<label>日数（日数で決める場合）<input ' + prefix + '="支払サイト日数" id="' + (prefix === 'data-f' ? 'cf_days' : 'nc_site') + '" type="number" inputmode="numeric" value="' + esc(days || 30) + '"' + (cur === '日数指定' ? '' : ' disabled') + '></label></div>';
 }
-function supName(id) { const x = D && D.supMap[id]; return x ? x['仕入先名'] : ''; }
+function supLabel(x) { return x ? x['仕入先名'] + (x['産地'] ? '（' + x['産地'] + '）' : '') : ''; }
+function supName(id) { return supLabel(D && D.supMap[id]); }
 function unitOf(pid) { return (D.pMap[pid] || {})['単位'] || ''; }
 function custLabel(c) { return (c['取引先名'] || '') + (c['国'] && c['国'] !== 'JP' ? '（' + c['国'] + '）' : ''); }
 function phaseOf(c) { if (c['フェーズ']) return String(c['フェーズ']); const m = /フェーズ: ([^、\n]+)/.exec(c['メモ'] || ''); return m ? m[1].trim() : ''; }
@@ -251,7 +254,7 @@ function tabOf(p) {
   const k = p[0] || '';
   if (/^(order|orders|new-order|po|new-po)$/.test(k)) return 'orders';
   if (/^(sales|customer|customer-edit|project-edit)$/.test(k)) return 'sales';
-  if (/^(stock|stock-item|stock-op|stocktake|products|product-edit|suppliers|supplier-edit)$/.test(k)) return 'stock';
+  if (/^(stock|stock-item|stock-op|stocktake|products|product-edit|suppliers|supplier-edit|materials|material-edit)$/.test(k)) return 'stock';
   if (/^(input|task|task-edit)$/.test(k)) return 'input';
   return 'dash';
 }
@@ -269,6 +272,7 @@ function top(title, opt) {
 
 function render() {
   if (!D) return;
+  ui.dirty = false;
   const r = route(); const p = r.parts;
   let html;
   switch (p[0]) {
@@ -279,7 +283,7 @@ function render() {
     case 'new-order': html = viewOrderForm(r.q.get('c') || ''); break;
     case 'sales': html = viewSales(); break;
     case 'customer': html = viewCustomer(decodeURIComponent(p[1] || '')); break;
-    case 'customer-edit': html = viewCustomerForm(decodeURIComponent(p[1] || 'new'), r.q.get('phase') || ''); break;
+    case 'customer-edit': html = viewCustomerForm(decodeURIComponent(p[1] || 'new'), r.q.get('phase') || '', r.q.get('kind') || ''); break;
     case 'project-edit': html = viewProjectForm(decodeURIComponent(p[1] || 'new')); break;
     case 'stock': html = viewStock(); break;
     case 'stock-item': html = viewStockItem(decodeURIComponent(p[1] || '')); break;
@@ -288,6 +292,8 @@ function render() {
     case 'products': html = viewProducts(); break;
     case 'product-edit': html = viewProductForm(decodeURIComponent(p[1] || 'new')); break;
     case 'suppliers': html = viewSuppliers(); break;
+    case 'materials': html = viewMaterials(); break;
+    case 'material-edit': html = viewMaterialForm(decodeURIComponent(p[1] || 'new')); break;
     case 'supplier-edit': html = viewSupplierForm(decodeURIComponent(p[1] || 'new')); break;
     case 'input': html = viewInput(); break;
     case 'task': html = viewTask(decodeURIComponent(p[1] || '')); break;
@@ -297,6 +303,7 @@ function render() {
   shell.innerHTML = html + nav(tabOf(p));
   if (p[0] === 'new-order') initOrderForm();
   if (p[0] === 'new-po') updPOForm();
+  if (p[0] === 'product-edit') updBom();
   if (p[0] === 'stock-op') updStockOp();
 }
 
@@ -617,7 +624,7 @@ function viewOrderForm(cid) {
     '<label>取引先<input class="search" style="height:40px" placeholder="取引先名で絞り込み" id="of_cq"><select id="of_c">' + opts + '</select></label>' +
     '<div class="subform hidden" id="of_newc"><b>新しい取引先（取引先マスタにも登録されます）</b><label>取引先名<input id="nc_name" placeholder="例：Cafe Graz"></label>' +
     '<div class="two"><label>国<select id="nc_country">' + COUNTRIES.map((x) => '<option>' + x + '</option>').join('') + '</select></label><label>通貨<select id="nc_cur"><option>JPY</option><option>EUR</option></select></label></div>' +
-    '<div class="two"><label>区分<select id="nc_kind">' + ['', 'カフェ', '卸', '小売', 'その他'].map((x) => '<option value="' + x + '">' + (x || '未設定') + '</option>').join('') + '</select></label><span></span></div>' + payFields('', 30, 'data-n') +
+    '<div class="two"><label>区分<select id="nc_kind">' + ['', 'カフェ', '卸', '小売', '個人', 'その他'].map((x) => '<option value="' + x + '">' + (x || '未設定') + '</option>').join('') + '</select></label><span></span></div>' + payFields('', 30, 'data-n') +
     '<label>先方の担当者・メール（任意）<input id="nc_contact" placeholder="例：山田さん yamada@example.com"></label></div>' +
     '<div id="of_lines" style="display:flex;flex-direction:column;gap:10px"></div><button class="btn ghost" data-act="addline" style="min-height:40px">＋ 商品を追加</button>' +
     '<div class="sumbox"><span class="note" id="of_curnote">合計</span><b id="of_total">¥0</b></div>' +
@@ -794,7 +801,7 @@ function viewPOForm(q) {
   const sups = D.suppliers.slice().sort((a, b) => (a['仕入先名'] || '').localeCompare(b['仕入先名'] || '', 'ja'));
   const loc = q.get('l') || (ui.stockLoc !== 'all' ? ui.stockLoc : CONFIG.LOCATIONS[0]);
   return top('発注を登録', { back: true }) + '<main class="view" style="gap:12px"><section class="card pad form" id="poform">' +
-    '<label>仕入先<select id="po_s"><option value="">選んでください</option>' + sups.map((x) => '<option value="' + esc(x['仕入先ID']) + '"' + (x['仕入先ID'] === sid ? ' selected' : '') + '>' + esc(x['仕入先名']) + '</option>').join('') + '</select></label>' +
+    '<label>仕入先<select id="po_s"><option value="">選んでください</option>' + sups.map((x) => '<option value="' + esc(x['仕入先ID']) + '"' + (x['仕入先ID'] === sid ? ' selected' : '') + '>' + esc(supLabel(x)) + '</option>').join('') + '</select></label>' +
     '<div id="po_lines" style="display:flex;flex-direction:column;gap:10px">' + poLineHtml(pid) + '</div><button class="btn ghost" data-act="addpoline" style="min-height:40px">＋ 商品を追加</button>' +
     '<div class="sumbox"><span class="note">合計（税抜）</span><b id="po_total">¥0</b></div>' +
     '<div class="two"><label>入荷予定日<input type="date" id="po_plan" value="' + addDays(todayStr(), 7) + '"></label><label>入荷先<select id="po_loc">' + CONFIG.LOCATIONS.map((l) => '<option' + (l === loc ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></label></div>' +
@@ -837,7 +844,7 @@ function custStats(c) {
 function billParents() { const ids = {}; D.customers.forEach((c) => { if (c.bill) ids[c['帳合先']] = 1; }); return Object.keys(ids).map((k) => D.cMap[k]).sort((a, b) => (a['取引先名'] || '').localeCompare(b['取引先名'] || '', 'ja')); }
 function filteredCustomers() {
   const q = ui.custQ.trim().toLowerCase();
-  let list = D.customers.filter((c) => ui.custChip === 'all' || (phaseOf(c) || 'その他') === ui.custChip);
+  let list = D.customers.filter((c) => !isPerson(c) && (ui.custChip === 'all' || (phaseOf(c) || 'その他') === ui.custChip));
   if (ui.custBill === '__none') list = list.filter((c) => !c.bill);
   else if (ui.custBill === '__has') list = list.filter((c) => c.bill);
   else if (ui.custBill) list = list.filter((c) => c['帳合先'] === ui.custBill || c['取引先ID'] === ui.custBill);
@@ -880,13 +887,14 @@ function custListHtml() {
 }
 const PHASES = ['取引中', '商談中', 'パイプライン', '失注'];
 function salesSeg() {
-  return '<div class="seg"><button class="' + (ui.salesTab === 'w' ? 'on' : '') + '" data-act="stab" data-v="w">卸売り営業</button><button class="' + (ui.salesTab === 'p' ? 'on' : '') + '" data-act="stab" data-v="p">プロジェクト</button></div>';
+  return '<div class="seg"><button class="' + (ui.salesTab === 'w' ? 'on' : '') + '" data-act="stab" data-v="w">卸売り営業</button><button class="' + (ui.salesTab === 'i' ? 'on' : '') + '" data-act="stab" data-v="i">個人</button><button class="' + (ui.salesTab === 'p' ? 'on' : '') + '" data-act="stab" data-v="p">プロジェクト</button></div>';
 }
 function viewSales() {
   if (ui.salesTab === 'p') return viewProjects();
-  const phases = {}; D.customers.forEach((c) => { const p = phaseOf(c) || 'その他'; phases[p] = (phases[p] || 0) + 1; });
+  if (ui.salesTab === 'i') return viewPersons();
+  const phases = {}; D.customers.filter((c) => !isPerson(c)).forEach((c) => { const p = phaseOf(c) || 'その他'; phases[p] = (phases[p] || 0) + 1; });
   const order = PHASES.concat(['その他']);
-  const chipDefs = [['all', 'すべて', D.customers.length]].concat(order.filter((p) => phases[p]).map((p) => [p, p, phases[p]]));
+  const chipDefs = [['all', 'すべて', D.customers.filter((c) => !isPerson(c)).length]].concat(order.filter((p) => phases[p]).map((p) => [p, p, phases[p]]));
   return top('営業ボード', { extra: salesSeg() }) + '<main class="view wide" style="gap:12px"><div class="chips">' + chipDefs.map((x) => '<button class="chip' + (ui.custChip === x[0] ? ' on' : '') + '" data-act="cchip" data-v="' + esc(x[0]) + '">' + esc(x[1]) + ' ' + x[2] + '</button>').join('') + '</div>' +
     '<div class="toolbar"><input class="search" type="search" placeholder="取引先名・帳合先・国・メモで検索" value="' + esc(ui.custQ) + '" data-input="custQ">' +
     '<select class="search" id="cust_bill" aria-label="帳合先で絞り込み"><option value="">帳合先：すべて</option><option value="__has"' + (ui.custBill === '__has' ? ' selected' : '') + '>帳合先あり</option><option value="__none"' + (ui.custBill === '__none' ? ' selected' : '') + '>帳合先なし</option>' +
@@ -894,6 +902,27 @@ function viewSales() {
     '<div class="seg light"><button class="' + (ui.custView === 'list' ? 'on' : '') + '" data-act="cview" data-v="list">一覧</button><button class="' + (ui.custView === 'bill' ? 'on' : '') + '" data-act="cview" data-v="bill">帳合先ごと</button></div></div>' +
     '<div id="clist" style="display:flex;flex-direction:column;gap:12px">' + custListHtml() + '</div>' +
     '<button class="btn primary narrow-btn" data-act="open" data-href="#/customer-edit/new">＋ 取引先・リードを追加</button></main>';
+}
+
+/* ---------- 個人のお客さま（区分「個人」） ---------- */
+function isPerson(c) { return (c && c['区分']) === '個人'; }
+function personList() {
+  const q = (ui.perQ || '').trim().toLowerCase();
+  let list = D.customers.filter(isPerson).map((c) => ({ c, s: custStats(c) }));
+  if (q) list = list.filter((x) => ((x.c['取引先名'] || '') + ' ' + (x.c['メモ'] || '')).toLowerCase().indexOf(q) >= 0);
+  list.sort((a, b) => (b.s.last || '').localeCompare(a.s.last || '') || (a.c['取引先名'] || '').localeCompare(b.c['取引先名'] || '', 'ja'));
+  const tot = list.reduce((x, y) => x + y.s.fy, 0);
+  const href = (x) => '#/customer/' + encodeURIComponent(x.c['取引先ID']);
+  const cols = CUST_COLS.filter((c) => ['bill', 'phase', 'kind'].indexOf(c.k) < 0);
+  return { list, tot, html: (isPC() ? tableHtml('cust', cols, list, href) : list.map((x) => custCard(x.c, x.s)).join('')) || '<div class="empty">該当する人はいません</div>' };
+}
+function viewPersons() {
+  const r = personList(); const list = r.list, tot = r.tot, body = r.html;
+  return top('営業ボード', { extra: salesSeg() }) + '<main class="view wide" style="gap:12px">' +
+    '<div class="note">取引先の区分が「個人」のお客さまです。卸売り営業の一覧には出しません。今年度の売上 ' + man(tot) + '・' + list.length + '人</div>' +
+    '<div class="toolbar"><input class="search" type="search" placeholder="名前・メモで検索" value="' + esc(ui.perQ || '') + '" data-input="perQ"></div>' +
+    '<div id="perlist" style="display:flex;flex-direction:column;gap:12px">' + body + '</div>' +
+    '<button class="btn primary narrow-btn" data-act="open" data-href="#/customer-edit/new?kind=' + encodeURIComponent('個人') + '">＋ 個人のお客さまを追加</button></main>';
 }
 
 /* ---------- プロジェクト ---------- */
@@ -944,11 +973,16 @@ function viewCustomer(id) {
     (c['メモ'] ? '<section class="card memo">' + esc(c['メモ']) + '</section>' : '') +
     (kids.length ? '<p class="sec-title">この取引先を帳合先にしている取引先（' + kids.length + '件）</p><div class="card list">' + kids.map((k) => '<a class="row" href="#/customer/' + encodeURIComponent(k['取引先ID']) + '"><span class="c" style="color:var(--ink)">' + esc(custLabel(k)) + '</span><span class="note" style="flex:none">今年度 ' + man(custStats(k).fy) + '</span></a>').join('') + '</div>' : '') +
     '<p class="sec-title">受注（' + os.length + '件）</p>' + (os.slice(0, 50).map(orderCard).join('') || '<div class="empty">まだ受注はありません</div>') +
+    (os.length ? '<details class="card pad movebox"><summary>この取引先の受注を、別の取引先に移す</summary><div class="form" style="margin-top:10px">' +
+      '<div class="note">同じ相手が別の名前で登録されているときに使います。受注 ' + os.length + '件の取引先を書き換え、受注のメモに元の取引先名を残します。</div>' +
+      '<label>移す先の取引先<select id="mv_to"><option value="">選んでください</option>' + D.customers.filter((x) => x['取引先ID'] !== id).sort((a, b) => (a['取引先名'] || '').localeCompare(b['取引先名'] || '', 'ja')).map((x) => '<option value="' + esc(x['取引先ID']) + '">' + esc(custLabel(x)) + '</option>').join('') + '</select></label>' +
+      '<label class="check"><input type="checkbox" id="mv_del" checked>移したあと、この取引先を削除する</label>' +
+      '<button class="btn" data-act="moveorders" data-id="' + esc(id) + '">受注を移す</button></div></details>' : '') +
     (os.length ? '<div class="note">受注がある取引先は削除できません。先に受注を削除してください。</div>' : kids.length ? '<div class="note">帳合先として使われている取引先は削除できません。</div>' : '<button class="btn danger" data-act="delcust" data-id="' + esc(id) + '">この取引先を削除</button>') + '</main>';
 }
 const COUNTRIES = ['JP', 'AT', 'DE', 'NL', 'IT', 'FR', 'CZ', 'SK', 'SI', 'HU', 'GB', 'US', 'AE', 'DO'];
-function viewCustomerForm(id, phase) {
-  const c = id === 'new' ? { '国': 'JP', '通貨': 'JPY', '支払サイト日数': 30, 'フェーズ': phase || '' } : Object.assign({}, D.cMap[id] || {}, { 'フェーズ': phaseOf(D.cMap[id] || {}) });
+function viewCustomerForm(id, phase, kind) {
+  const c = id === 'new' ? { '国': 'JP', '通貨': 'JPY', '支払サイト日数': 30, 'フェーズ': phase || '', '区分': kind || '' } : Object.assign({}, D.cMap[id] || {}, { 'フェーズ': phaseOf(D.cMap[id] || {}) });
   const f = (k, label, type) => '<label>' + label + '<input data-f="' + k + '" type="' + (type || 'text') + '" value="' + esc(c[k]) + '"></label>';
   const ctry = COUNTRIES.indexOf(c['国']) < 0 && c['国'] ? COUNTRIES.concat([c['国']]) : COUNTRIES;
   return top(id === 'new' ? '取引先を追加' : '取引先を編集', { back: true }) + '<main class="view" style="gap:12px"><section class="card pad form" id="cform">' + f('取引先名', '取引先名') +
@@ -956,7 +990,7 @@ function viewCustomerForm(id, phase) {
     '<label>帳合先（請求書の宛先。ない場合は空欄）<select data-f="帳合先"><option value="">なし（この取引先に直接請求）</option>' +
     D.customers.filter((x) => x['取引先ID'] !== id && !x.bill).sort((a, b) => (a['取引先名'] || '').localeCompare(b['取引先名'] || '', 'ja')).map((x) => '<option value="' + esc(x['取引先ID']) + '"' + (x['取引先ID'] === (c['帳合先'] || '') ? ' selected' : '') + '>' + esc(custLabel(x)) + '</option>').join('') + '</select></label>' +
     '<label>営業のフェーズ<select data-f="フェーズ">' + [''].concat(PHASES).map((x) => '<option value="' + x + '"' + (x === (c['フェーズ'] || '') ? ' selected' : '') + '>' + (x || '未設定') + '</option>').join('') + '</select></label>' +
-    '<div class="two"><label>区分<select data-f="区分">' + ['', 'カフェ', '卸', '小売', 'その他'].map((x) => '<option value="' + x + '"' + (x === (c['区分'] || '') ? ' selected' : '') + '>' + (x || '未設定') + '</option>').join('') + '</select></label><span></span></div>' + payFields(c['支払条件'] || '', c['支払サイト日数'], 'data-f') +
+    '<div class="two"><label>区分<select data-f="区分">' + ['', 'カフェ', '卸', '小売', '個人', 'その他'].map((x) => '<option value="' + x + '"' + (x === (c['区分'] || '') ? ' selected' : '') + '>' + (x || '未設定') + '</option>').join('') + '</select></label><span></span></div>' + payFields(c['支払条件'] || '', c['支払サイト日数'], 'data-f') +
     f('担当者名', '先方の担当者') + '<div class="two">' + f('メール', 'メール', 'email') + f('電話', '電話', 'tel') + '</div>' + f('住所', '住所') +
     '<label>メモ<textarea data-f="メモ">' + esc(c['メモ']) + '</textarea></label></section><button class="btn primary" data-act="savecust" data-id="' + esc(id) + '">保存する</button></main>';
 }
@@ -1007,7 +1041,7 @@ function stockListHtml() {
     gs.forEach((g) => { const k = g.sup ? g.sup['仕入先ID'] : ''; (G[k] = G[k] || { sup: g.sup, list: [], value: 0 }).list.push(g); G[k].value += g.value; });
     const keys = Object.keys(G).sort((a, b) => (a === '' ? 1 : 0) - (b === '' ? 1 : 0) || G[b].value - G[a].value);
     return keys.map((k) => { const x = G[k];
-      return '<div class="grp card open"><div class="grp-h"><span class="grp-n"><b>' + (x.sup ? esc(x.sup['仕入先名']) : '仕入先が未設定の商品') + '</b>' + (x.sup && x.sup['支払条件'] ? '<span class="note">支払条件 ' + esc(x.sup['支払条件']) + '</span>' : '') + '</span><span class="grp-s"><span>' + x.list.length + '件</span><b>在庫金額 ' + yen(x.value) + '</b></span></div>' +
+      return '<div class="grp card open"><div class="grp-h"><span class="grp-n"><b>' + (x.sup ? esc(supLabel(x.sup)) : '仕入先が未設定の商品') + '</b>' + (x.sup && x.sup['支払条件'] ? '<span class="note">支払条件 ' + esc(x.sup['支払条件']) + '</span>' : '') + '</span><span class="grp-s"><span>' + x.list.length + '件</span><b>在庫金額 ' + yen(x.value) + '</b></span></div>' +
         '<div class="grp-b">' + (isPC() ? tableHtml('stock', STOCK_COLS.filter((c) => c.k !== 'sup'), x.list, href) : x.list.map((g) => stockCard(g, ui.stockLoc === 'all')).join('')) + '</div></div>'; }).join('') || '<div class="empty">在庫はありません</div>';
   }
   if (isPC()) return tableHtml('stock', STOCK_COLS, gs, href);
@@ -1027,7 +1061,7 @@ function viewStock() {
     '<div class="toolbar"><input class="search" type="search" placeholder="商品名・仕入先で検索" value="' + esc(ui.stockQ) + '" data-input="stockQ">' +
     '<div class="seg light"><button class="' + (ui.stockGroup === 'list' ? 'on' : '') + '" data-act="sgroup" data-v="list">一覧</button><button class="' + (ui.stockGroup === 'sup' ? 'on' : '') + '" data-act="sgroup" data-v="sup">仕入先ごと</button></div></div>' +
     '<div id="slist" style="display:flex;flex-direction:column;gap:12px">' + stockListHtml() + '</div>' +
-    '<div class="btns narrow-btn"><a class="btn ghost" href="#/products">商品マスタ（' + D.products.length + '件）</a><a class="btn ghost" href="#/suppliers">仕入先マスタ（' + D.suppliers.length + '件）</a></div></main>';
+    '<div class="btns narrow-btn"><a class="btn ghost" href="#/products">商品マスタ（' + D.products.length + '件）</a><a class="btn ghost" href="#/suppliers">仕入先マスタ（' + D.suppliers.length + '件）</a><a class="btn ghost" href="#/materials">資材マスタ（' + D.materials.length + '件）</a></div></main>';
 }
 function viewStockItem(pid) {
   const p = D.pMap[pid];
@@ -1123,11 +1157,11 @@ async function saveStocktake() {
 function viewProducts() {
   const ps = D.products.slice().sort((a, b) => (a['商品名'] || '').localeCompare(b['商品名'] || '', 'ja'));
   const rows = ps.map((p) => '<a class="row" href="#/product-edit/' + encodeURIComponent(p['商品ID']) + '"' + (truthy(p['販売中']) ? '' : ' style="opacity:.5"') + '><span class="c" style="color:var(--ink);font-weight:500">' + esc(p['商品名']) +
-    '<span class="note" style="display:block;font-weight:400">' + (supName(p['仕入先']) ? esc(supName(p['仕入先'])) : '仕入先未設定') + (costOf(p) != null ? '・仕入 ' + yen(costOf(p)) : '') + '・税率' + (num(p['税率']) === 10 ? '10%' : '8%') + '</span></span><span class="note" style="flex:none">' +
+    (p['栽培区分'] ? '<span class="tag' + (p['栽培区分'] === '有機' ? ' org' : '') + '">' + esc(p['栽培区分']) + '</span>' : '') + '<span class="note" style="display:block;font-weight:400">' + (D.bomBy[p['商品ID']] ? '原価 ' + yen(costOf(p)) + '（内訳から計算）' : (supName(p['仕入先']) ? esc(supName(p['仕入先'])) : '仕入先未設定') + (costOf(p) != null ? '・仕入 ' + yen(costOf(p)) : '')) + '・税率' + (num(p['税率']) === 10 ? '10%' : '8%') + '</span></span><span class="note" style="flex:none">' +
     priceLabel(p) + '</span></a>').join('');
   return top('商品マスタ', { back: true }) + '<main class="view" style="gap:12px">' +
     '<div class="h2row"><p class="sec-title">商品（' + ps.length + '件）</p><span class="note">標準の販売単価</span></div><div class="card list">' + rows + '</div>' +
-    '<button class="btn primary" data-act="open" data-href="#/product-edit/new">＋ 商品を追加</button></main>';
+    '<div class="btns"><button class="btn primary" data-act="open" data-href="#/product-edit/new">＋ 商品を追加</button><a class="btn ghost" href="#/materials">資材マスタ（' + D.materials.length + '件）</a></div></main>';
 }
 function viewProductForm(id) {
   const p = id === 'new' ? { '単位': 'kg', '販売中': true, '税率': 8 } : (D.pMap[id] || {});
@@ -1137,16 +1171,81 @@ function viewProductForm(id) {
     '<div class="two"><label>単位<select data-f="単位">' + ['kg', '個', '袋'].map((x) => '<option' + (x === p['単位'] ? ' selected' : '') + '>' + x + '</option>').join('') + '</select></label>' +
     '<label>消費税率<select data-f="税率"><option value="8"' + (num(p['税率']) !== 10 ? ' selected' : '') + '>8%（軽減税率・飲食料品）</option><option value="10"' + (num(p['税率']) === 10 ? ' selected' : '') + '>10%（サービス・配送料など）</option></select></label></div>' +
     '<div class="two">' + f('標準単価（円）', '標準の販売単価（円、税抜）', 'number') + f('標準単価（ユーロ）', '標準の販売単価（ユーロ）', 'number') + '</div>' +
-    '<div class="two"><label>仕入先<select data-f="仕入先"><option value="">未設定</option>' + sups.map((x) => '<option value="' + esc(x['仕入先ID']) + '"' + (x['仕入先ID'] === p['仕入先'] ? ' selected' : '') + '>' + esc(x['仕入先名']) + '</option>').join('') + '</select></label>' + f('仕入単価', '標準の仕入単価（円、税抜）', 'number') + '</div>' +
+    '<div class="two"><label>仕入先<select data-f="仕入先"><option value="">未設定</option>' + sups.map((x) => '<option value="' + esc(x['仕入先ID']) + '"' + (x['仕入先ID'] === p['仕入先'] ? ' selected' : '') + '>' + esc(supLabel(x)) + '</option>').join('') + '</select></label>' + f('仕入単価', '標準の仕入単価（円、税抜）', 'number') + '</div>' +
+    '<label>栽培区分<select data-f="栽培区分">' + [['', '未設定（資材やサービスなど）'], ['有機', '有機'], ['慣行', '慣行']].map((x) => '<option value="' + x[0] + '"' + (x[0] === (p['栽培区分'] || '') ? ' selected' : '') + '>' + x[1] + '</option>').join('') + '</select></label>' +
     '<label class="check"><input type="checkbox" data-f="販売中"' + (truthy(p['販売中']) ? ' checked' : '') + '>販売中</label>' +
     '<label class="check"><input type="checkbox" data-f="在庫管理"' + (id === 'new' || isStockItem(p) ? ' checked' : '') + '>在庫を管理する（サービスや配送料は外す）</label></section>' +
+    bomSection(id) +
     '<div class="note">輸出（海外の取引先）の請求書は免税になるため、税率の設定は国内の請求書だけに使います。</div><button class="btn primary" data-act="saveprod" data-id="' + esc(id) + '">保存する</button>' +
     (id !== 'new' ? '<button class="btn danger" data-act="delprod" data-id="' + esc(id) + '">この商品を削除</button>' : '') + '</main>';
+}
+/* ---------- 原価の内訳（商品＝原料、資材＝箱・袋・シールなど） ---------- */
+function partOf(kind, id) { return kind === '資材' ? D.matMap[id] : D.pMap[id]; }
+function partCost(kind, id) { const x = partOf(kind, id); if (!x) return 0; return kind === '資材' ? num(x['単価']) : (costOf(x) || 0); }
+function partUnit(kind, id) { const x = partOf(kind, id); return x ? (x['単位'] || '') : ''; }
+// 原料が kg 単位なら g で入力する
+function inGrams(kind, id) { return kind !== '資材' && partUnit(kind, id) === 'kg'; }
+function bomRowHtml(kind, partId, qty, self) {
+  const opts = kind === '資材'
+    ? D.materials.slice().sort((a, b) => (a['資材名'] || '').localeCompare(b['資材名'] || '', 'ja')).map((m) => '<option value="' + esc(m['資材ID']) + '"' + (m['資材ID'] === partId ? ' selected' : '') + '>' + esc(m['資材名']) + '（' + yen(m['単価']) + '/' + esc(m['単位'] || '') + '）</option>').join('')
+    : D.products.filter((p) => p['商品ID'] !== self).sort((a, b) => (a['商品名'] || '').localeCompare(b['商品名'] || '', 'ja')).map((p) => '<option value="' + esc(p['商品ID']) + '"' + (p['商品ID'] === partId ? ' selected' : '') + '>' + esc(p['商品名']) + (costOf(p) != null ? '（' + yen(costOf(p)) + '/' + esc(p['単位'] || '') + '）' : '（原価未設定）') + '</option>').join('');
+  const g = partId && inGrams(kind, partId);
+  const shown = qty === '' || qty == null ? '' : (g ? Math.round(num(qty) * 1000 * 100) / 100 : num(qty));
+  return '<div class="bom-row" data-kind="' + kind + '"><span class="bk">' + (kind === '資材' ? '資材' : '原料') + '</span><select class="b_part"><option value="">' + (kind === '資材' ? '資材を選ぶ' : '原料の商品を選ぶ') + '</option>' + opts + '</select>' +
+    '<label class="bq"><input class="b_qty" type="number" step="any" inputmode="decimal" value="' + shown + '"><span class="b_u">' + (partId ? (g ? 'g' : esc(partUnit(kind, partId))) : '') + '</span></label><span class="b_amt note"></span><button class="x" data-act="rmbom" aria-label="削除">×</button></div>';
+}
+function bomUnit(row) { const kind = row.dataset.kind, id = row.querySelector('.b_part').value; row.querySelector('.b_u').textContent = id ? (inGrams(kind, id) ? 'g' : partUnit(kind, id)) : ''; }
+function bomRows() {
+  return [...document.querySelectorAll('#bom_rows .bom-row')].map((r) => { const kind = r.dataset.kind, id = r.querySelector('.b_part').value; let q = num(r.querySelector('.b_qty').value); if (id && inGrams(kind, id)) q = q / 1000; return { kind, partId: id, qty: q }; }).filter((b) => b.partId && b.qty > 0);
+}
+function bomSection(id) {
+  const rows = (D.bomBy[id] || []).map((b) => bomRowHtml(b['種類'], b['部品'], b['数量'], id)).join('');
+  return '<section class="card pad form" id="bomsec"><div class="h2row"><b style="font-size:14px">原価の内訳（小売商品など）</b><span class="note">任意</span></div>' +
+    '<div class="note">原料の商品（例：ゆたかみどり 25g）と資材（例：箱、アルミ袋、シール）を組み合わせると、1単位あたりの原価を自動で計算し、標準の仕入単価として保存します。原料の原価は商品マスタの仕入単価、資材の原価は資材マスタの単価を使います。</div>' +
+    '<div id="bom_rows" style="display:flex;flex-direction:column;gap:8px">' + rows + '</div>' +
+    '<div class="btns"><button class="btn ghost" data-act="addbom" data-kind="商品" data-id="' + esc(id) + '">＋ 原料を追加</button><button class="btn ghost" data-act="addbom" data-kind="資材" data-id="' + esc(id) + '">＋ 資材を追加</button></div>' +
+    '<div class="sumbox" id="bom_sum"></div></section>';
+}
+function val2(sel) { const e = document.querySelector(sel); return e ? e.value : ''; }
+function updBom() {
+  const sec = document.getElementById('bomsec'); if (!sec) return;
+  let total = 0; let n = 0;
+  sec.querySelectorAll('.bom-row').forEach((r) => {
+    const kind = r.dataset.kind, id = r.querySelector('.b_part').value; let q = num(r.querySelector('.b_qty').value);
+    if (id && inGrams(kind, id)) q = q / 1000;
+    const a = id && q > 0 ? q * partCost(kind, id) : 0; if (a) n++;
+    total += a; r.querySelector('.b_amt').textContent = a ? yen(Math.round(a * 100) / 100) : '';
+  });
+  const costIn = document.querySelector('#pform [data-f="仕入単価"]');
+  if (costIn) { costIn.disabled = n > 0; if (n > 0) costIn.value = Math.round(total * 100) / 100; }
+  const price = num(val2('#pform [data-f="標準単価（円）"]')); const unit = val2('#pform [data-f="単位"]') || '単位';
+  document.getElementById('bom_sum').innerHTML = n ? '<span class="note">原価（1' + esc(unit) + 'あたり）</span><b>' + yen(Math.round(total * 100) / 100) + '</b>' + (price ? '<span class="note" style="flex-basis:100%">販売単価 ' + yen(price) + ' に対する原価率 ' + Math.round(total / price * 1000) / 10 + '%・粗利 ' + yen(Math.round((price - total) * 100) / 100) + '</span>' : '') : '<span class="note">内訳がないときは、上の「標準の仕入単価」をそのまま使います。</span>';
+}
+function viewMaterials() {
+  const used = {}; D.boms.forEach((b) => { if (b['種類'] === '資材') used[b['部品']] = (used[b['部品']] || 0) + 1; });
+  const rows = D.materials.slice().sort((a, b) => (a['資材名'] || '').localeCompare(b['資材名'] || '', 'ja')).map((m) => '<a class="row" href="#/material-edit/' + encodeURIComponent(m['資材ID']) + '"><span class="c" style="color:var(--ink);font-weight:500">' + esc(m['資材名']) +
+    '<span class="note" style="display:block;font-weight:400">' + (supName(m['仕入先']) ? esc(supName(m['仕入先'])) + '・' : '') + '使っている商品 ' + (used[m['資材ID']] || 0) + '件</span></span><span class="note" style="flex:none">' + yen(m['単価']) + '/' + esc(m['単位'] || '') + '</span></a>').join('');
+  return top('資材マスタ', { back: true }) + '<main class="view" style="gap:12px"><div class="note">箱、袋、シールなど、商品を作るときに使う資材です。商品マスタの「原価の内訳」で使います。</div><div class="card list">' + (rows || '<div class="empty">資材はまだありません</div>') + '</div>' +
+    '<button class="btn primary" data-act="open" data-href="#/material-edit/new">＋ 資材を追加</button></main>';
+}
+function viewMaterialForm(id) {
+  const m = id === 'new' ? { '単位': '枚' } : (D.matMap[id] || {});
+  const sups = D.suppliers.slice().sort((a, b) => (a['仕入先名'] || '').localeCompare(b['仕入先名'] || '', 'ja'));
+  const ps = D.boms.filter((b) => b['種類'] === '資材' && b['部品'] === id).map((b) => D.pMap[b['商品']]).filter(Boolean);
+  return top(id === 'new' ? '資材を追加' : '資材を編集', { back: true }) + '<main class="view" style="gap:12px"><section class="card pad form" id="matform">' +
+    '<label>資材名<input data-f="資材名" value="' + esc(m['資材名']) + '" placeholder="例：Mood Tea Breeze is Nice 箱"></label>' +
+    '<div class="two"><label>単価（円、税抜）<input data-f="単価" type="number" step="any" inputmode="decimal" value="' + esc(m['単価']) + '"></label><label>単位<select data-f="単位">' + ['枚', '個', '袋', '箱', '本', '巻', 'm', 'g'].map((x) => '<option' + (x === m['単位'] ? ' selected' : '') + '>' + x + '</option>').join('') + '</select></label></div>' +
+    '<label>仕入先（任意）<select data-f="仕入先"><option value="">未設定</option>' + sups.map((x) => '<option value="' + esc(x['仕入先ID']) + '"' + (x['仕入先ID'] === m['仕入先'] ? ' selected' : '') + '>' + esc(supLabel(x)) + '</option>').join('') + '</select></label>' +
+    '<label>メモ<textarea data-f="メモ" placeholder="例：100枚単位で発注、ロット価格など">' + esc(m['メモ']) + '</textarea></label></section>' +
+    '<div class="note">単価を変えても、使っている商品の原価は自動では変わりません。商品マスタで商品を開いて保存し直すと、新しい単価で計算し直します。</div>' +
+    '<button class="btn primary" data-act="savemat" data-id="' + esc(id) + '">保存する</button>' +
+    (id !== 'new' ? '<p class="sec-title">この資材を使う商品（' + ps.length + '件）</p><div class="card list">' + (ps.map((p) => '<a class="row" href="#/product-edit/' + encodeURIComponent(p['商品ID']) + '"><span class="c" style="color:var(--ink)">' + esc(p['商品名']) + '</span><span class="note" style="flex:none">原価 ' + yen(costOf(p)) + '</span></a>').join('') || '<div class="empty">まだありません</div>') + '</div>' +
+      (ps.length ? '' : '<button class="btn danger" data-act="delmat" data-id="' + esc(id) + '">この資材を削除</button>') : '') + '</main>';
 }
 function viewSuppliers() {
   const val2 = {}; D.stock.forEach((g) => { const k = g.p['仕入先'] || ''; val2[k] = (val2[k] || 0) + g.value; });
   const cnt = {}; D.products.forEach((p) => { const k = p['仕入先'] || ''; cnt[k] = (cnt[k] || 0) + 1; });
-  const rows = D.suppliers.slice().sort((a, b) => (a['仕入先名'] || '').localeCompare(b['仕入先名'] || '', 'ja')).map((x) => '<a class="row" href="#/supplier-edit/' + encodeURIComponent(x['仕入先ID']) + '"><span class="c" style="color:var(--ink);font-weight:500">' + esc(x['仕入先名']) +
+  const rows = D.suppliers.slice().sort((a, b) => (a['仕入先名'] || '').localeCompare(b['仕入先名'] || '', 'ja')).map((x) => '<a class="row" href="#/supplier-edit/' + encodeURIComponent(x['仕入先ID']) + '"><span class="c" style="color:var(--ink);font-weight:500">' + esc(x['仕入先名']) + (x['産地'] ? '<span class="tag">' + esc(x['産地']) + '</span>' : '') +
     '<span class="note" style="display:block;font-weight:400">商品 ' + (cnt[x['仕入先ID']] || 0) + '件' + (x['支払条件'] ? '・' + esc(x['支払条件']) : '') + (x['担当者名'] ? '・' + esc(x['担当者名']) : '') + '</span></span><span class="note" style="flex:none">在庫金額 ' + yen(val2[x['仕入先ID']] || 0) + '</span></a>').join('');
   return top('仕入先マスタ', { back: true }) + '<main class="view" style="gap:12px"><div class="card list">' + (rows || '<div class="empty">仕入先はまだありません</div>') + '</div>' +
     '<button class="btn primary" data-act="open" data-href="#/supplier-edit/new">＋ 仕入先を追加</button></main>';
@@ -1155,7 +1254,7 @@ function viewSupplierForm(id) {
   const x = id === 'new' ? {} : (D.supMap[id] || {});
   const f = (k, label, type) => '<label>' + label + '<input data-f="' + k + '" type="' + (type || 'text') + '" value="' + esc(x[k]) + '"></label>';
   const ps = D.products.filter((p) => p['仕入先'] === id);
-  return top(id === 'new' ? '仕入先を追加' : '仕入先を編集', { back: true }) + '<main class="view" style="gap:12px"><section class="card pad form" id="supform">' + f('仕入先名', '仕入先名') + f('担当者名', '担当者') +
+  return top(id === 'new' ? '仕入先を追加' : '仕入先を編集', { back: true }) + '<main class="view" style="gap:12px"><section class="card pad form" id="supform"><div class="two">' + f('仕入先名', '仕入先名（例：八万寿茶園）') + f('産地', '産地（例：屋久島）') + '</div>' + f('担当者名', '担当者') +
     '<div class="two">' + f('電話', '電話', 'tel') + f('メール', 'メール', 'email') + '</div>' + f('住所', '住所') + f('支払条件', '支払条件（例：月末締め翌月末払い）') +
     '<label>メモ<textarea data-f="メモ">' + esc(x['メモ']) + '</textarea></label></section><button class="btn primary" data-act="savesup" data-id="' + esc(id) + '">保存する</button>' + (id !== 'new' ? '<button class="btn" data-act="open" data-href="#/new-po?s=' + encodeURIComponent(id) + '">この仕入先に発注する</button>' : '') +
     (id !== 'new' ? '<p class="sec-title">この仕入先の商品（' + ps.length + '件）</p><div class="card list">' + (ps.map((p) => '<a class="row" href="#/product-edit/' + encodeURIComponent(p['商品ID']) + '"><span class="c" style="color:var(--ink)">' + esc(p['商品名']) + '</span><span class="note" style="flex:none">' + (costOf(p) != null ? '仕入 ' + yen(costOf(p)) : '仕入単価未設定') + '</span></a>').join('') || '<div class="empty">まだありません</div>') + '</div>' +
@@ -1184,7 +1283,7 @@ function viewInput() {
     '<button class="tile" data-act="open" data-href="#/stock-op/in">入庫</button><button class="tile" data-act="open" data-href="#/stock-op/out">出庫</button>' +
     '<button class="tile" data-act="open" data-href="#/stock-op/move">在庫移動</button><button class="tile" data-act="open" data-href="#/stocktake">棚卸</button></div></section>' +
     '<section style="display:flex;flex-direction:column;gap:8px"><p class="note" style="margin:0">マスタ</p><div class="tiles">' +
-    '<button class="tile" data-act="open" data-href="#/customer-edit/new">取引先を追加</button><button class="tile" data-act="open" data-href="#/product-edit/new">商品を追加</button><button class="tile" data-act="open" data-href="#/supplier-edit/new">仕入先を追加</button><button class="tile" data-act="open" data-href="#/suppliers">仕入先マスタ</button></div></section>' +
+    '<button class="tile" data-act="open" data-href="#/customer-edit/new">取引先を追加</button><button class="tile" data-act="open" data-href="#/product-edit/new">商品を追加</button><button class="tile" data-act="open" data-href="#/supplier-edit/new">仕入先を追加</button><button class="tile" data-act="open" data-href="#/suppliers">仕入先マスタ</button><button class="tile" data-act="open" data-href="#/materials">資材マスタ</button></div></section>' +
     '<section style="display:flex;flex-direction:column;gap:8px"><p class="note" style="margin:0">その他</p><div class="tiles">' +
     '<button class="tile" data-act="open" data-href="#/task-edit/new">タスクを追加<small>未完了 ' + tasks + '件</small></button></div></section>' +
     '<section style="display:flex;flex-direction:column;gap:8px"><p class="note" style="margin:0">最近の受注</p><div class="card list">' + recent + '</div></section></main>';
@@ -1243,6 +1342,9 @@ document.addEventListener('click', async (ev) => {
     case 'invissue': if (!el.dataset.re || confirm('今の受注の内容で請求書を作り直します。請求番号は同じで、版が1つ上がります')) await write('issueInvoice', { id }, '請求書PDFを作りました', '請求書を作っています…'); break;
     case 'invpdf': await openInvoicePdf(id); break;
     case 'invmail': await draftInvoiceMail(id); break;
+    case 'moveorders': { const to = val('mv_to'); if (!to) { alert('移す先の取引先を選んでください'); break; } const del = document.getElementById('mv_del').checked;
+      if (!confirm('この取引先の受注を「' + custLabel(D.cMap[to]) + '」に移します。' + (del ? 'そのあと、この取引先を削除します。' : ''))) break;
+      if (await write('moveOrders', { from: id, to, deleteFrom: del }, '受注を移しました')) go('#/customer/' + encodeURIComponent(to)); break; }
     case 'cview': ui.custView = el.dataset.v; render(); break;
     case 'sgroup': ui.stockGroup = el.dataset.v; render(); break;
     case 'botab': ui.boTab = el.dataset.v; ui.edit = false; render(); break;
@@ -1269,7 +1371,11 @@ document.addEventListener('click', async (ev) => {
     case 'savecust': { const v = formVals('#cform'); if (!v['取引先名']) { alert('取引先名を入力してください'); break; } if (id !== 'new') v['取引先ID'] = id; const before = new Set(D.customers.map((c) => c['取引先ID'])); if (await write('saveCustomer', v, '保存しました')) { const n = id !== 'new' ? D.cMap[id] : D.customers.find((c) => !before.has(c['取引先ID'])); go(n ? '#/customer/' + encodeURIComponent(n['取引先ID']) : '#/sales'); } break; }
     case 'savesup': { const v = formVals('#supform'); if (!v['仕入先名']) { alert('仕入先名を入力してください'); break; } if (id !== 'new') v['仕入先ID'] = id; if (await write('saveSupplier', v, '保存しました')) go('#/suppliers'); break; }
     case 'delsup': if (confirm('この仕入先を削除しますか。元に戻せません')) { if (await write('deleteSupplier', { id }, '削除しました')) go('#/suppliers'); } break;
-    case 'saveprod': { const v = formVals('#pform'); if (!v['商品名']) { alert('商品名を入力してください'); break; } if (id !== 'new') v['商品ID'] = id; if (await write('saveProduct', v, '保存しました')) go('#/products'); break; }
+    case 'saveprod': { const v = formVals('#pform'); if (!v['商品名']) { alert('商品名を入力してください'); break; } if (id !== 'new') v['商品ID'] = id; v.bom = bomRows(); if (v.bom.length) delete v['仕入単価']; if (await write('saveProduct', v, '保存しました')) go('#/products'); break; }
+    case 'addbom': document.getElementById('bom_rows').insertAdjacentHTML('beforeend', bomRowHtml(el.dataset.kind, '', '', el.dataset.id)); updBom(); break;
+    case 'rmbom': el.closest('.bom-row').remove(); updBom(); break;
+    case 'savemat': { const v = formVals('#matform'); if (!v['資材名']) { alert('資材名を入力してください'); break; } if (id !== 'new') v['資材ID'] = id; if (await write('saveMaterial', v, '保存しました')) go('#/materials'); break; }
+    case 'delmat': if (confirm('この資材を削除しますか。元に戻せません')) { if (await write('deleteMaterial', { id }, '削除しました')) go('#/materials'); } break;
     case 'savetask': { const v = formVals('#tform'); if (!v['作業'] || !v['期日']) { alert('作業と期日を入力してください'); break; } if (await write('saveTask', v, 'タスクを登録しました')) go('#/'); break; }
     case 'donetask': if (await write('completeTask', { id }, '完了にしました')) go('#/'); break;
   }
@@ -1285,12 +1391,15 @@ document.addEventListener('mouseout', (ev) => {
   if (!c || !r || !ui._fyVals || (ev.relatedTarget && c.contains(ev.relatedTarget))) return;
   const sel = document.querySelector('.fycol.sel'); r.textContent = fyReadout(ui._fyVals.find((v) => sel && v.k === sel.dataset.k));
 });
+function markDirty(t) { if (t && t.closest && t.closest('main.view') && !t.classList.contains('search') && !t.dataset.input) ui.dirty = true; }
 document.addEventListener('input', (ev) => {
+  markDirty(ev.target);
   const t = ev.target;
   if (t.dataset && t.dataset.input) {
     ui[t.dataset.input] = t.value;
     if (t.dataset.input === 'orderQ') document.getElementById('olist').innerHTML = orderListHtml();
     if (t.dataset.input === 'custQ') document.getElementById('clist').innerHTML = custListHtml();
+    if (t.dataset.input === 'perQ') document.getElementById('perlist').innerHTML = personList().html;
     if (t.dataset.input === 'poQ') document.getElementById('plist').innerHTML = poListHtml();
     if (t.dataset.input === 'stockQ') document.getElementById('slist').innerHTML = stockListHtml();
     return;
@@ -1301,13 +1410,17 @@ document.addEventListener('input', (ev) => {
   }
   if (t.closest && t.closest('#oform')) updOrderForm();
   if (t.closest && t.closest('#poform')) updPOForm();
+  if (t.closest && (t.closest('#bomsec') || t.closest('#pform'))) updBom();
 });
 document.addEventListener('change', (ev) => {
   const t = ev.target;
+  markDirty(t);
   if (t.id === 'so_cost') { t.dataset.auto = '0'; return; }
   if (t.id === 'so_p' || t.id === 'so_loc') { updStockOp(); return; }
   if (t.classList && t.classList.contains('pl_p')) { const p = D.pMap[t.value]; const u = t.closest('.po-line').querySelector('.pl_u'); if (p && costOf(p) != null) u.value = costOf(p); updPOForm(); return; }
   if (t.id === 'po_s' || t.id === 'po_plan') { updPOForm(); return; }
+  if (t.closest && t.closest('#bomsec')) { if (t.classList.contains('b_part')) bomUnit(t.closest('.bom-row')); updBom(); return; }
+  if (t.closest && t.closest('#pform')) updBom();
   if (t.id === 'cust_bill') { ui.custBill = t.value; document.getElementById('clist').innerHTML = custListHtml(); return; }
   if (t.id === 'tk_loc') { go('#/stocktake?l=' + encodeURIComponent(t.value)); return; }
   if (t.id === 'of_c') onCustChange();
@@ -1322,7 +1435,8 @@ document.addEventListener('change', (ev) => {
 /* ================= 起動 ================= */
 async function refresh(manual) {
   const btn = document.querySelector('[data-act="reload"]'); if (btn) btn.classList.add('spin');
-  try { setData(await api('bootstrap')); if (manual) toast('最新の状態にしました'); }
+  // 入力の途中なら、画面を描き直さずにデータだけ新しくする（入力した内容が消えないように）
+  try { const data = await api('bootstrap'); const keep = !manual && ui.dirty; setData(data, keep); if (keep && btn) btn.classList.remove('spin'); if (manual) toast('最新の状態にしました'); }
   catch (e) { if (e.message !== 'auth') toast('読み込めませんでした：' + e.message); }
 }
 function start() {
