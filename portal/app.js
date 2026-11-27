@@ -478,8 +478,20 @@ function filteredOrders() {
   const q = ui.orderQ.trim().toLowerCase();
   let list = D.orders.filter(chip[2]);
   if (q) list = list.filter((o) => (custLabel(o.c) + ' ' + (o.c.bill ? o.c.bill['取引先名'] : '') + ' ' + o.no + ' ' + o.summary + ' ' + (o.inv ? o.inv['請求番号'] : '')).toLowerCase().indexOf(q) >= 0);
-  if (['active', 'unshipped', 'uninvoiced', 'unpaid'].indexOf(chip[0]) >= 0) list.sort((a, b) => ((a.act || {})['期日'] || '9').localeCompare((b.act || {})['期日'] || '9'));
+  const by = ui.orderSort || 'auto';
+  const byNo = (a, b) => (b['受注日'] || '').localeCompare(a['受注日'] || '') || b.no.localeCompare(a.no);
+  if (by === 'new') list.sort(byNo);
+  else if (by === 'old') list.sort((a, b) => byNo(b, a));
+  else if (by === 'amt') list.sort((a, b) => b.yen - a.yen);
+  else if (by === 'due' || ['active', 'unshipped', 'uninvoiced', 'unpaid'].indexOf(chip[0]) >= 0) list.sort((a, b) => ((a.act || {})['期日'] || '9').localeCompare((b.act || {})['期日'] || '9') || byNo(a, b));
   return list;
+}
+// 並べ順（携帯の一覧用）。選んだ順は次に開いたときも使う
+const ORDER_SORTS = [['auto', '並べ順：おまかせ（進行中は期日順）'], ['new', '受注日が新しい順'], ['old', '受注日が古い順'], ['due', '次の作業の期日が近い順'], ['amt', '金額が大きい順']];
+try { ui.orderSort = localStorage.getItem('ip_order_sort') || 'auto'; } catch (e) { ui.orderSort = 'auto'; }
+function orderSortSel() {
+  if (isPC() && ui.orderView === 'list') return '';
+  return '<select class="search sortsel" id="order_sort" aria-label="並べ順">' + ORDER_SORTS.map((x) => '<option value="' + x[0] + '"' + (x[0] === ui.orderSort ? ' selected' : '') + '>' + x[1] + '</option>').join('') + '</select>';
 }
 const ORDER_COLS = [
   { k: 'no', label: '受注番号', val: (o) => o.no },
@@ -528,7 +540,7 @@ function viewOrders() {
   const views = [['list', '一覧'], ['cust', '取引先ごと'], ['bill', '帳合先ごと']];
   const seg = '<div class="seg light">' + views.map((v) => '<button class="' + (ui.orderView === v[0] ? 'on' : '') + '" data-act="oview" data-v="' + v[0] + '">' + v[1] + '</button>').join('') + '</div>';
   return top('受発注ボード', { extra: boSeg() }) + '<main class="view wide" style="gap:12px">' +
-    '<div class="chips">' + chips + '</div><div class="toolbar"><input class="search" type="search" placeholder="取引先・受注番号・商品・請求番号で検索" value="' + esc(ui.orderQ) + '" data-input="orderQ">' + seg + '</div>' +
+    '<div class="chips">' + chips + '</div><div class="toolbar"><input class="search" type="search" placeholder="取引先・受注番号・商品・請求番号で検索" value="' + esc(ui.orderQ) + '" data-input="orderQ">' + orderSortSel() + seg + '</div>' +
     '<div id="olist" style="display:flex;flex-direction:column;gap:12px">' + orderListHtml() + '</div>' +
     '<button class="btn primary narrow-btn" data-act="open" data-href="#/new-order">＋ 受注を登録</button></main>';
 }
@@ -1421,6 +1433,7 @@ document.addEventListener('change', (ev) => {
   if (t.id === 'po_s' || t.id === 'po_plan') { updPOForm(); return; }
   if (t.closest && t.closest('#bomsec')) { if (t.classList.contains('b_part')) bomUnit(t.closest('.bom-row')); updBom(); return; }
   if (t.closest && t.closest('#pform')) updBom();
+  if (t.id === 'order_sort') { ui.orderSort = t.value; try { localStorage.setItem('ip_order_sort', t.value); } catch (e) {} document.getElementById('olist').innerHTML = orderListHtml(); return; }
   if (t.id === 'cust_bill') { ui.custBill = t.value; document.getElementById('clist').innerHTML = custListHtml(); return; }
   if (t.id === 'tk_loc') { go('#/stocktake?l=' + encodeURIComponent(t.value)); return; }
   if (t.id === 'of_c') onCustChange();
