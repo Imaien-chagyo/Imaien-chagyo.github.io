@@ -1445,7 +1445,18 @@ function start() {
   if (!D) shell.innerHTML = '<div class="login"><p>読み込んでいます…</p></div>';
   refresh(false);
 }
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && D && tokenValid()) refresh(false); });
+/* 新しい版が公開されていたら、入力中でないときに読み込み直す（ブラウザが古い画面を覚えていても最新になるように） */
+const APP_V = (document.querySelector('script[src*="app.js"]') || { src: '' }).src.replace(/.*[?&]v=([^&]+).*/, '$1');
+async function checkVersion() {
+  try {
+    const html = await fetch('index.html?t=' + Date.now(), { cache: 'no-store' }).then((r) => r.text());
+    const m = /app\.js\?v=([^"'&]+)/.exec(html);
+    // 新しい版だけを対象にし、同じ版での読み込み直しは1回まで（繰り返しを防ぐ）
+    if (m && APP_V && Number(m[1]) > Number(APP_V) && !ui.dirty && sessionStorage.getItem('ip_reloaded') !== m[1]) { sessionStorage.setItem('ip_reloaded', m[1]); location.reload(); }
+  } catch (e) {}
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && D && tokenValid()) { refresh(false); checkVersion(); } });
+setTimeout(checkVersion, 1500);
 
 if (tokenValid()) start(); else showLogin();
 })();
